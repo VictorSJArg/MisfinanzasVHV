@@ -57,6 +57,10 @@ interface DetailModalData {
     endDate: string;
 }
 
+const formatMoney = (amount: number) => {
+    return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(amount);
+};
+
 export default function FlowGrid() {
     // Load saved preferences from localStorage
     const [mounted, setMounted] = useState(false);
@@ -1046,7 +1050,7 @@ export default function FlowGrid() {
                                             <div className="relative w-full h-full flex items-center justify-end">
                                                 <span
                                                     className={`tabular-nums block w-full overflow-hidden text-ellipsis cursor-text ${cellAmount > 0 ? 'text-gray-700' : 'text-gray-300'}`}
-                                                    onDoubleClick={() => handleCellDoubleClick(row, idx, cellAmount, group.description, group.cellTxs?.[idx]?.[0]?.id)}
+                                                    onDoubleClick={() => handleSubCellDoubleClick(row.category.id, idx, cellAmount, group.description, group.cellTxs?.[idx]?.[0]?.id)}
                                                 >
                                                     {cellAmount > 0 ? formatMoney(cellAmount) : '-'}
                                                 </span>
