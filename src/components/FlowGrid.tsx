@@ -90,6 +90,7 @@ export default function FlowGrid() {
     const [showVariations, setShowVariations] = useState(
         savedPrefs?.showVariations !== undefined ? savedPrefs.showVariations : true
     );
+    const [error, setError] = useState<string | null>(null);
 
     // Custom date range mode
     const [useCustomRange, setUseCustomRange] = useState(savedPrefs?.useCustomRange || false);
@@ -163,11 +164,18 @@ export default function FlowGrid() {
         });
 
         try {
+            setError(null);
             const res = await fetch(`/api/flow?${query.toString()}`);
+            if (!res.ok) {
+                const text = await res.text();
+                throw new Error(`Failed to fetch data: ${res.status} ${res.statusText} - ${text.substring(0, 100)}`);
+            }
             const result = await res.json();
             setData(result);
-        } catch (error) {
-            console.error(error);
+        } catch (error: any) {
+            console.error('Fetch error:', error);
+            setError(error.message || 'Unknown error');
+            setData(null); // Ensure data is null on error
         } finally {
             setLoading(false);
         }
@@ -769,7 +777,20 @@ export default function FlowGrid() {
         </div>
     );
 
-    if (!data) return <div>Error loading</div>;
+    if (!data) return (
+        <div className="p-8 text-center">
+            <div className="text-red-500 font-bold mb-2">Error loading data</div>
+            <div className="text-sm text-gray-600 font-mono bg-gray-100 p-2 rounded inline-block max-w-lg overflow-auto">
+                {error || 'Unknown error'}
+            </div>
+            <button
+                onClick={() => fetchData(true)}
+                className="block mx-auto mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+                Retry
+            </button>
+        </div>
+    );
 
     const renderStatusIcon = (txs: any[]) => {
         if (!txs || txs.length === 0) return null;

@@ -14,7 +14,7 @@ export default function FlowPage() {
         <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
             <header className="bg-white border-b border-gray-200 px-4 py-4 flex items-center justify-between shadow-sm flex-shrink-0">
                 <div className="flex items-center gap-4">
-                    <h1 className="text-xl font-bold tracking-tight text-gray-800">💰 Mis Finanzas VHV</h1>
+                    <h1 className="text-xl font-bold tracking-tight text-gray-800">💰 Mi Finanzas VHV Sup</h1>
                     <Link
                         href="/dashboard"
                         className="text-sm text-blue-600 hover:text-blue-700 font-medium hover:underline"
