@@ -1,0 +1,7 @@
+{
+    "amount": 100,
+    "date": "2026-02-02T03:00:00.000Z",
+    "type": "INCOME",
+    "categoryId": "aff24b27-9614-4f56-9f64-9de44ad2135b",
+    "description": "TestFile"
+}

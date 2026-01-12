@@ -1,0 +1,173 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  currency  String   @default("ARS")
+  createdAt DateTime @default(now())
+
+  transactions Transaction[]
+  categories   Category[]
+  budgets      Budget[]
+  accounts     Account[]
+}
+
+model Account {
+  id      String @id @default(uuid())
+  name    String
+  type    String // CASH, BANK, WALLET, CREDIT
+  balance Decimal @default(0)
+  userId  String
+  user    User   @relation(fields: [userId], references: [id])
+
+  transactions Transaction[]
+}
+
+model Category {
+  id        String   @id @default(uuid())
+  name      String
+  type      String   // INCOME, EXPENSE
+  icon      String?
+  color     String?
+  parentId  String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+
+  transactions Transaction[]
+  budgets      Budget[]
+  children    Category[] @relation("CategoryHierarchy")
+  parent      Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+
+  @@unique([userId, name, type])
+}
+
+model Transaction {
+  id          String   @id @default(uuid())
+  amount      Decimal
+  date        DateTime
+  description String?
+  type        String   // INCOME, EXPENSE, TRANSFER
+  
+  categoryId  String?
+  category    Category? @relation(fields: [categoryId], references: [id])
+  
+  accountId   String
+  account     Account @relation(fields: [accountId], references: [id])
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  status      String   @default("PAID") // PAID, PENDING, CANCELLED
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, date])
+  @@index([userId, categoryId])
+}
+
+model Budget {
+  id         String   @id @default(uuid())
+  amount     Decimal
+  period     String   // MONTHLY, WEEKLY
+  year       Int
+  month      Int?
+  
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
+  
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, year, month, categoryId])
+}
+
+// Tarjeta de Crédito
+model CreditCard {
+  id        String   @id @default(uuid())
+  name      String   // Nombre de la tarjeta (ej: "VISA BSJ")
+  bank      String   // Banco emisor
+  lastFour  String?  // Últimos 4 dígitos
+  
+  userId    String
+  createdAt DateTime @default(now())
+  
+  statements CreditCardStatement[]
+}
+
+// Resumen mensual de la tarjeta
+model CreditCardStatement {
+  id           String   @id @default(uuid())
+  closingDate  DateTime // Fecha de cierre
+  dueDate      DateTime // Fecha de vencimiento (cuando se paga)
+  totalAmount  Decimal  // Saldo total del resumen
+  minimumPayment Decimal? // Pago mínimo
+  
+  creditCardId String
+  creditCard   CreditCard @relation(fields: [creditCardId], references: [id], onDelete: Cascade)
+  
+  items        CreditCardItem[]
+  
+  createdAt    DateTime @default(now())
+  
+  @@unique([creditCardId, closingDate])
+}
+
+// Ítem individual del resumen (cada consumo)
+model CreditCardItem {
+  id              String   @id @default(uuid())
+  date            DateTime // Fecha del consumo
+  description     String   // Descripción (ej: "NETFLIX", "COMBUSTIBLES BARCELO")
+  amount          Decimal  // Monto en pesos
+  amountUSD       Decimal? // Monto en dólares (si aplica)
+  
+  // Cuotas
+  installmentCurrent Int?  // Cuota actual (ej: 4 de C.04/06)
+  installmentTotal   Int?  // Total de cuotas (ej: 6 de C.04/06)
+  installmentAmount  Decimal? // Monto por cuota
+  
+  // Clasificación
+  itemType        String   @default("PURCHASE") // PURCHASE, RECURRING, PAYMENT, FEE, TAX
+  isRecurring     Boolean  @default(false)      // Is this a recurring expense?
+  category        String?  // Categoría: COMBUSTIBLE, ALIMENTOS, SERVICIOS, ENTRETENIMIENTO, ROPA, SALUD, OTROS
+  observations    String?  // User notes/observations
+  
+  
+  // Proyecciones
+  includeInProjection Boolean @default(true)    // Si se incluye en las proyecciones
+  projectedAmount     Decimal?                  // Monto manual para proyección
+  
+  statementId     String
+  statement       CreditCardStatement @relation(fields: [statementId], references: [id], onDelete: Cascade)
+  
+  createdAt       DateTime @default(now())
+}
+
+model ProjectionStatus {
+  id          String   @id @default(uuid())
+  referenceId String   // ID of the CreditCardItem or source entity
+  date        DateTime // The specific projected date
+  status      String   // "PAID", "CANCELLED", "PENDING"
+  updatedAt   DateTime @updatedAt
+
+  @@unique([referenceId, date])
+}
+
+// Override de monto para un mes específico de una proyección
+model ProjectionMonthlyOverride {
+  id          String   @id @default(uuid())
+  itemId      String   // ID del CreditCardItem
+  yearMonth   String   // Formato "YYYY-MM" para identificar el mes
+  amount      Decimal  // Monto override para este mes específico
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([itemId, yearMonth])
+}
