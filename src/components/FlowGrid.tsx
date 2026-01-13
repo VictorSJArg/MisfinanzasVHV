@@ -98,36 +98,93 @@ export default function FlowGrid() {
         savedPrefs?.customStartDate || format(subMonths(new Date(), 1), 'yyyy-MM-dd')
     );
     const [customEndDate, setCustomEndDate] = useState<string>(
-        savedPrefs?.customEndDate || format(new Date(), 'yyyy-MM-dd')
+        savedPrefs?.customEndDate || format(endOfMonth(addMonths(new Date(), 4)), 'yyyy-MM-dd')
     );
+    const [showPercentages, setShowPercentages] = useState(false);
+    const [sortConfig, setSortConfig] = useState<{ key: number | 'total'; direction: 'asc' | 'desc' } | null>(null);
 
-    // Estado para categorías expandidas
-    const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
-    const [hideEmptyColumns, setHideEmptyColumns] = useState(
-        savedPrefs?.hideEmptyColumns || false
-    );
-
-    // Edición de descripciones de grupo
-    const [editingGroup, setEditingGroup] = useState<EditingGroup | null>(null);
-
-    // Estado para edición inline
-    const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
-    const [selectedCell, setSelectedCell] = useState<{ categoryId: string, columnIndex: number } | null>(null);
-
-    // Timer removido ya que quitamos la ambigüedad click/dblclick (ahora hacen cosas distintas inmediatas)
-    // const clickTimerRef = useRef<NodeJS.Timeout | null>(null);
-    const clickTimerRef = useRef<any>(null); // Dejar ref por si acaso para limpiar, aunque no se use lógica compleja
-    const inputRef = useRef<HTMLInputElement>(null);
-
-    // Caché para detalles de categorías (Lazy Loading)
+    // Moved State Definitions (Consolidated at Top)
     const [detailsCache, setDetailsCache] = useState<Record<string, TransactionDetail[]>>({});
     const [loadingCategories, setLoadingCategories] = useState<Set<string>>(new Set());
+    const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
-    // Estado para modal de detalle
+    // UI State
+    const [hideEmptyColumns, setHideEmptyColumns] = useState(savedPrefs?.hideEmptyColumns || false);
+    const [editingGroup, setEditingGroup] = useState<EditingGroup | null>(null);
+    const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
+    const [selectedCell, setSelectedCell] = useState<{ categoryId: string, columnIndex: number } | null>(null);
     const [detailModal, setDetailModal] = useState<DetailModalData | null>(null);
-
-    // Estado para modal de operaciones masivas
     const [bulkModalOpen, setBulkModalOpen] = useState(false);
+
+    // Refs
+    // const clickTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const clickTimerRef = useRef<any>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    // Filter State
+    const [searchTerm, setSearchTerm] = useState('');
+    const [filterType, setFilterType] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
+    const [filterMinAmount, setFilterMinAmount] = useState<string>('');
+    const [filterMaxAmount, setFilterMaxAmount] = useState<string>('');
+    const [showFilters, setShowFilters] = useState(false);
+
+    const handleSort = (key: number | 'total') => {
+        setSortConfig(current => {
+            if (current?.key === key) {
+                return { key, direction: current.direction === 'asc' ? 'desc' : 'asc' };
+            }
+            return { key, direction: 'desc' };
+        });
+    };
+
+    const getFilteredRows = useCallback((rows: RowData[], type: 'INCOME' | 'EXPENSE') => {
+        return rows.filter(row => {
+            // Amount Filter
+            const min = filterMinAmount !== '' ? parseFloat(filterMinAmount) : Number.NEGATIVE_INFINITY;
+            const max = filterMaxAmount !== '' ? parseFloat(filterMaxAmount) : Number.POSITIVE_INFINITY;
+
+            if (row.total < min || row.total > max) return false;
+
+            // Text Search
+            const term = searchTerm.toLowerCase();
+            // 1. Match Category Name
+            if (row.category.name.toLowerCase().includes(term)) return true;
+
+            // 2. Match Cached Transactions (Deep Search) - Best Effort
+            const cachedTxs = detailsCache[row.category.id];
+            if (cachedTxs) {
+                const hasMatch = cachedTxs.some(tx =>
+                    tx.description && tx.description.toLowerCase().includes(term)
+                );
+                if (hasMatch) return true;
+            }
+
+            return false;
+        });
+    }, [searchTerm, filterMinAmount, filterMaxAmount, detailsCache]);
+
+
+
+    const getSortedRows = useCallback((rows: RowData[]) => {
+        if (!sortConfig) return rows;
+        return [...rows].sort((a, b) => {
+            let valA = 0;
+            let valB = 0;
+            if (sortConfig.key === 'total') {
+                valA = a.total;
+                valB = b.total;
+            } else {
+                valA = a.cells[sortConfig.key as number] || 0;
+                valB = b.cells[sortConfig.key as number] || 0;
+            }
+            return sortConfig.direction === 'asc' ? valA - valB : valB - valA;
+        });
+    }, [sortConfig]);
+
+    // Estado para categorías expandidas
+
+
+
 
     const fetchData = useCallback(async (includeDetails = false) => {
         setLoading(true);
@@ -850,16 +907,22 @@ export default function FlowGrid() {
         const colorClass = type === 'INCOME' ? 'text-emerald-600' : 'text-rose-600';
         const transactionGroups = isExpanded ? getTransactionGroups(row) : [];
 
+        // Helper para calcular porcentaje total
+        const groupTotalIncomeed = data?.summary.reduce((acc, curr) => acc + curr.income, 0) || 0;
+        const groupTotalExpense = data?.summary.reduce((acc, curr) => acc + curr.expense, 0) || 0;
+        const groupTotal = type === 'INCOME' ? groupTotalIncomeed : groupTotalExpense;
+        const totalPercentage = groupTotal > 0 ? (totalToRender / groupTotal) * 100 : 0;
+
         return (
             <Fragment key={row.category.id}>
-                <tr className="hover:bg-gray-50 group transition-colors">
-                    <td className="sticky left-0 bg-white group-hover:bg-gray-50 z-10 px-2 py-2 text-gray-700 border-r border-gray-200 font-medium relative">
+                <tr className="hover:bg-gray-50 dark:hover:bg-slate-800 group transition-colors">
+                    <td className="sticky left-0 bg-white dark:bg-slate-900 group-hover:bg-gray-50 dark:group-hover:bg-slate-800 z-10 px-2 py-2 text-gray-700 dark:text-slate-200 border-r border-gray-200 dark:border-slate-800 font-medium relative">
                         <div className="flex items-center gap-1 justify-between">
                             <div className="flex items-center gap-1 overflow-hidden">
                                 {hasTransactions ? (
                                     <button
                                         onClick={() => toggleCategory(row.category.id)}
-                                        className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded text-xs flex-shrink-0"
+                                        className="w-5 h-5 flex items-center justify-center text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 hover:bg-gray-200 dark:hover:bg-slate-700 rounded text-xs flex-shrink-0"
                                     >
                                         {isExpanded ? '▼' : '▶'}
                                     </button>
@@ -887,56 +950,67 @@ export default function FlowGrid() {
                         const allPaid = cellTxs.length > 0 && cellTxs.every((t: any) => t.status === 'PAID');
 
                         return (
-                            <td
-                                key={idx}
-                                className={`px-2 py-1 text-right cursor-pointer transition-colors relative group/cell
+                            <Fragment key={idx}>
+                                <td
+                                    className={`px-2 py-1 text-right cursor-pointer transition-colors relative group/cell
                                     ${selectedCell?.categoryId === row.category.id && selectedCell?.columnIndex === idx
-                                        ? 'bg-blue-100 ring-2 ring-blue-500 z-10'  // Celda seleccionada
-                                        : (allPaid ? 'bg-green-50 text-emerald-700 font-medium hover:bg-green-100' : 'hover:bg-blue-50')
-                                    }`}
-                                onClick={() => handleCellClick(row, idx)}
-                                onDoubleClick={() => handleCellDoubleClick(row, idx, cell)}
-                                onContextMenu={(e) => {
-                                    if (cellTxs.length > 0) {
-                                        e.preventDefault();
-                                        toggleCellStatus(cellTxs);
-                                    }
-                                }}
-                                title={allPaid ? 'Todo Pagado' : ''}
-                            >
-                                {renderStatusIcon(cellTxs)}
-                                {editingCell?.categoryId === row.category.id && editingCell?.columnIndex === idx && typeof editingCell.detailDescription === 'undefined' ? (
-                                    <input
-                                        ref={inputRef}
-                                        type="number"
-                                        value={editingCell.value}
-                                        onChange={e => setEditingCell({ ...editingCell, value: e.target.value })}
-                                        onKeyDown={e => {
-                                            if (e.key === 'Enter') {
-                                                e.preventDefault();
-                                                const val = editingCell.value;
-                                                setEditingCell(null);
-                                                saveCellValue(row, idx, val);
-                                            }
-                                            if (e.key === 'Escape') setEditingCell(null);
-                                        }}
-                                        onBlur={() => {
-                                            if (editingCell && editingCell.categoryId === row.category.id && editingCell.columnIndex === idx) {
-                                                const val = editingCell.value;
-                                                setEditingCell(null);
-                                                saveCellValue(row, idx, val);
-                                            }
-                                        }}
-                                        onFocus={e => e.target.select()}
-                                        className="w-full text-right p-2 border-2 border-blue-500 rounded-md text-base font-bold text-blue-700 bg-white shadow-lg outline-none z-50 relative"
-                                        autoFocus
-                                    />
-                                ) : (
-                                    <span className={`tabular-nums block w-full overflow-hidden text-ellipsis ${cell > 0 ? `${colorClass} font-medium` : 'text-gray-300'}`}>
-                                        {cell > 0 ? formatMoney(cell) : '-'}
-                                    </span>
+                                            ? 'bg-blue-100 dark:bg-blue-900/40 ring-2 ring-blue-500 z-10'  // Celda seleccionada
+                                            : (allPaid ? 'bg-green-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 font-medium hover:bg-green-100 dark:hover:bg-emerald-900/30' : 'hover:bg-blue-50 dark:hover:bg-slate-800')
+                                        }`}
+                                    onClick={() => handleCellClick(row, idx)}
+                                    onDoubleClick={() => handleCellDoubleClick(row, idx, cell)}
+                                    onContextMenu={(e) => {
+                                        if (cellTxs.length > 0) {
+                                            e.preventDefault();
+                                            toggleCellStatus(cellTxs);
+                                        }
+                                    }}
+                                    title={allPaid ? 'Todo Pagado' : ''}
+                                >
+                                    {renderStatusIcon(cellTxs)}
+                                    {editingCell?.categoryId === row.category.id && editingCell?.columnIndex === idx && typeof editingCell.detailDescription === 'undefined' ? (
+                                        <input
+                                            ref={inputRef}
+                                            type="number"
+                                            value={editingCell.value}
+                                            onChange={e => setEditingCell({ ...editingCell, value: e.target.value })}
+                                            onKeyDown={e => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    const val = editingCell.value;
+                                                    setEditingCell(null);
+                                                    saveCellValue(row, idx, val);
+                                                }
+                                                if (e.key === 'Escape') setEditingCell(null);
+                                            }}
+                                            onBlur={() => {
+                                                if (editingCell && editingCell.categoryId === row.category.id && editingCell.columnIndex === idx) {
+                                                    const val = editingCell.value;
+                                                    setEditingCell(null);
+                                                    saveCellValue(row, idx, val);
+                                                }
+                                            }}
+                                            onFocus={e => e.target.select()}
+                                            className="w-full text-right p-2 border-2 border-blue-500 rounded-md text-base font-bold text-blue-700 dark:text-blue-300 bg-white dark:bg-slate-800 shadow-lg outline-none z-50 relative"
+                                            autoFocus
+                                        />
+                                    ) : (
+                                        <span className={`tabular-nums block w-full overflow-hidden text-ellipsis ${cell > 0 ? `${colorClass} font-medium` : 'text-gray-300 dark:text-slate-700'}`}>
+                                            {cell > 0 ? formatMoney(cell) : '-'}
+                                        </span>
+                                    )}
+                                </td>
+                                {showPercentages && (
+                                    <td className="px-1 py-1 text-right text-xs text-gray-400 dark:text-slate-500 bg-gray-50/50 dark:bg-slate-800/30 border-r border-gray-100 dark:border-slate-800 tabular-nums">
+                                        {(() => {
+                                            // Calculate % relative to the column total for this group
+                                            const colTotal = type === 'INCOME' ? (calculatedTotals.income[idx] || 0) : (calculatedTotals.expense[idx] || 0);
+                                            const pct = colTotal > 0 ? (cell / colTotal) * 100 : 0;
+                                            return pct > 0 ? `${pct.toFixed(0)}%` : '-';
+                                        })()}
+                                    </td>
                                 )}
-                            </td>
+                            </Fragment>
                         );
                     })}
                     {showVariations && data.columns.length > 1 && (
@@ -944,17 +1018,22 @@ export default function FlowGrid() {
                             {formatVariation(current, previous)}
                         </td>
                     )}
-                    <td className={`px-4 py-2 text-right font-medium ${colorClass} bg-gray-50`}>
+                    <td className={`px-4 py-2 text-right font-medium ${colorClass} bg-gray-50 dark:bg-slate-900 border-l border-gray-200 dark:border-slate-800 whitespace-nowrap sticky right-0 z-10 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)]`}>
                         {formatMoney(totalToRender)}
                     </td>
+                    {showPercentages && (
+                        <td className="px-2 py-2 text-right text-xs font-medium text-gray-500 dark:text-slate-400 bg-gray-100 dark:bg-slate-800 border-l border-gray-200 dark:border-slate-700 sticky right-[-50px] z-10">
+                            {totalToRender > 0 ? `${totalPercentage.toFixed(0)}%` : '-'}
+                        </td>
+                    )}
                 </tr>
                 {/* Filas de detalle expandidas */}
-                {/* BLOCK 1: SubRows (e.g. Credit Card Categories) - Purple */}
+                {/* BLOCK 1: SubRows (e.g. Credit Cards) - Purple */}
                 {isExpanded && row.subRows && row.subRows.length > 0 && (
                     row.subRows.map((subRow, subIdx) => (
-                        <tr key={`${row.category.id}-sub-${subRow.category.id}`} className="bg-purple-50/50">
-                            <td className="sticky left-0 bg-purple-50/50 z-10 px-2 py-1 border-r border-purple-200">
-                                <div className="flex items-center gap-2 pl-6 text-sm text-gray-600">
+                        <tr key={`${row.category.id}-sub-${subRow.category.id}`} className="bg-purple-50/50 dark:bg-purple-900/10">
+                            <td className="sticky left-0 bg-purple-50/50 dark:bg-purple-900/10 z-10 px-2 py-1 border-r border-purple-200 dark:border-purple-800">
+                                <div className="flex items-center gap-2 pl-6 text-sm text-gray-600 dark:text-slate-400">
                                     <span>↳</span>
                                     <span className="truncate" title={subRow.category.name}>{subRow.category.name}</span>
                                 </div>
@@ -967,7 +1046,7 @@ export default function FlowGrid() {
 
                                 return (
                                     <td key={idx}
-                                        className={`px-2 py-1 text-right text-xs border-b border-gray-100 ${allPaid ? 'text-emerald-600 font-medium' : 'text-gray-500'}`}
+                                        className={`px-2 py-1 text-right text-xs border-b border-gray-100 dark:border-slate-800 ${allPaid ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-gray-500 dark:text-slate-500'}`}
                                         title={allPaid ? 'Pagado' : ''}
                                     >
                                         {renderStatusIcon(cellTxs)}
@@ -975,8 +1054,8 @@ export default function FlowGrid() {
                                     </td>
                                 );
                             })}
-                            {showVariations && data.columns.length > 1 && <td className="bg-gray-50"></td>}
-                            <td className="px-4 py-2 text-right font-medium text-gray-600 bg-gray-50">
+                            {showVariations && data.columns.length > 1 && <td className="bg-gray-50 dark:bg-slate-900/50"></td>}
+                            <td className="px-4 py-2 text-right font-medium text-gray-600 dark:text-slate-400 bg-gray-50 dark:bg-slate-900 sticky right-0 z-10 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                                 {formatMoney(subRow.total)}
                             </td>
                         </tr>
@@ -986,9 +1065,9 @@ export default function FlowGrid() {
                 {/* BLOCK 2: Transaction Groups (Standard) - White/Gray */}
                 {isExpanded && (!row.subRows || row.subRows.length === 0) && (
                     transactionGroups.map((group, groupIdx) => (
-                        <tr key={`${row.category.id}-detail-${groupIdx}`} className="bg-gray-50/50">
-                            <td className="sticky left-0 bg-gray-50/50 z-10 px-2 py-1 border-r border-gray-200">
-                                <div className="flex items-center gap-1 pl-6 text-xs text-gray-500">
+                        <tr key={`${row.category.id}-detail-${groupIdx}`} className="bg-gray-50/50 dark:bg-slate-800/30">
+                            <td className="sticky left-0 bg-gray-50/50 dark:bg-slate-800/50 z-10 px-2 py-1 border-r border-gray-200 dark:border-slate-800">
+                                <div className="flex items-center gap-1 pl-6 text-xs text-gray-500 dark:text-slate-400">
                                     <span className="text-gray-300">└─</span>
                                     {editingGroup?.categoryId === row.category.id && editingGroup?.oldDescription === group.description ? (
                                         <input
@@ -1159,9 +1238,9 @@ export default function FlowGrid() {
     };
 
     return (
-        <div className="flex flex-col gap-4 h-full">
-            {/* Controls */}
-            <div className="flex flex-wrap items-center gap-3 bg-white p-3 rounded-lg border border-gray-200 shadow-sm flex-shrink-0">
+        <div className="flex-1 flex flex-col bg-card rounded-xl shadow-lg border border-border overflow-hidden relative transition-colors duration-300 text-card-foreground">
+            {/* Control Bar */}
+            <div className="flex flex-wrap items-center gap-4 p-4 border-b border-border bg-muted/50 flex-shrink-0">
                 {/* Toggle between modes */}
                 <div className="flex gap-1 text-sm bg-gray-100 p-1 rounded-md">
                     <button
@@ -1178,13 +1257,13 @@ export default function FlowGrid() {
                     </button>
                 </div>
 
-                <div className="w-px h-8 bg-gray-200"></div>
+                <div className="w-px h-8 bg-gray-200 dark:bg-slate-700"></div>
 
                 {!useCustomRange ? (
                     /* Period-based mode */
                     <>
                         <div className="flex items-center gap-2">
-                            <button onClick={handlePrevMonth} className="p-2 hover:bg-gray-100 rounded text-gray-600 font-bold" title="Anterior">&lt;</button>
+                            <button onClick={handlePrevMonth} className="p-2 hover:bg-muted rounded text-muted-foreground font-bold" title="Anterior">&lt;</button>
                             <input
                                 type="month"
                                 value={format(currentDate, 'yyyy-MM')}
@@ -1195,23 +1274,23 @@ export default function FlowGrid() {
                                         setCurrentDate(dLocal);
                                     }
                                 }}
-                                className="border border-gray-300 rounded px-2 py-1 text-sm font-semibold text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none"
+                                className="border border-border rounded px-2 py-1 text-sm font-semibold text-foreground bg-input focus:ring-2 focus:ring-blue-500 outline-none"
                             />
-                            <button onClick={handleNextMonth} className="p-2 hover:bg-gray-100 rounded text-gray-600 font-bold" title="Siguiente">&gt;</button>
+                            <button onClick={handleNextMonth} className="p-2 hover:bg-muted rounded text-muted-foreground font-bold" title="Siguiente">&gt;</button>
                             <button onClick={() => setCurrentDate(new Date())} className="text-xs text-blue-600 hover:underline">Hoy</button>
                         </div>
 
-                        <div className="w-px h-8 bg-gray-200"></div>
+                        <div className="w-px h-8 bg-gray-200 dark:bg-slate-700"></div>
 
                         <div className="flex items-center gap-2">
-                            <span className="text-sm text-gray-600">Períodos:</span>
+                            <span className="text-sm text-gray-600 dark:text-slate-300">Períodos:</span>
                             <input
                                 type="number"
                                 value={periodsCount}
                                 onChange={handlePeriodsChange}
                                 min={1}
                                 max={60}
-                                className="w-16 border border-gray-300 rounded px-2 py-1 text-center font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500"
+                                className="w-16 border border-border rounded px-2 py-1 text-center font-semibold text-foreground outline-none focus:ring-2 focus:ring-blue-500 bg-input"
                             />
                         </div>
                     </>
@@ -1219,63 +1298,158 @@ export default function FlowGrid() {
                     /* Custom range mode */
                     <>
                         <div className="flex items-center gap-2">
-                            <span className="text-sm text-gray-600">Desde:</span>
+                            <span className="text-sm text-muted-foreground">Desde:</span>
                             <input
                                 type="date"
                                 value={customStartDate}
                                 onChange={e => setCustomStartDate(e.target.value)}
-                                className="border border-gray-300 rounded px-2 py-1 text-sm font-semibold text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none"
+                                className="border border-border rounded px-2 py-1 text-sm font-semibold text-foreground focus:ring-2 focus:ring-blue-500 outline-none bg-input"
                             />
                         </div>
                         <div className="flex items-center gap-2">
-                            <span className="text-sm text-gray-600">Hasta:</span>
+                            <span className="text-sm text-muted-foreground">Hasta:</span>
                             <input
                                 type="date"
                                 value={customEndDate}
                                 onChange={e => setCustomEndDate(e.target.value)}
-                                className="border border-gray-300 rounded px-2 py-1 text-sm font-semibold text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none"
+                                className="border border-border rounded px-2 py-1 text-sm font-semibold text-foreground focus:ring-2 focus:ring-blue-500 outline-none bg-input"
                             />
                         </div>
                     </>
                 )}
 
-                <div className="w-px h-8 bg-gray-200"></div>
+                <div className="w-px h-8 bg-gray-200 dark:bg-slate-700"></div>
 
-                <div className="flex gap-1 text-sm bg-gray-100 p-1 rounded-md">
+                <div className="flex gap-1 text-sm bg-muted p-1 rounded-md transition-colors">
                     {(['month', 'week', 'day'] as const).map(g => (
                         <button
                             key={g}
                             onClick={() => setGranularity(g)}
-                            className={`px-3 py-1.5 rounded ${granularity === g ? 'bg-white shadow-sm text-blue-600 font-medium' : 'text-gray-500 hover:text-gray-700'}`}
+                            className={`px-3 py-1.5 rounded transition-all ${granularity === g ? 'bg-card shadow-sm text-blue-600 font-medium' : 'text-muted-foreground hover:text-foreground'}`}
                         >
                             {g === 'month' ? 'Mes' : g === 'week' ? 'Semana' : 'Día'}
                         </button>
                     ))}
                 </div>
 
-                <div className="w-px h-8 bg-gray-200"></div>
+                <div className="w-px h-8 bg-gray-200 dark:bg-slate-700"></div>
 
-                <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
                     <input
                         type="checkbox"
                         checked={showVariations}
                         onChange={e => setShowVariations(e.target.checked)}
-                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        className="rounded border-border text-blue-600 focus:ring-blue-500 bg-card"
                     />
                     Variaciones
                 </label>
 
                 <div className="w-px h-8 bg-gray-200"></div>
 
-                <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
                     <input
                         type="checkbox"
                         checked={hideEmptyColumns}
                         onChange={e => setHideEmptyColumns(e.target.checked)}
-                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        className="rounded border-border text-blue-600 focus:ring-blue-500"
                     />
                     Ocultar columnas vacías
                 </label>
+
+                <div className="w-px h-8 bg-gray-200"></div>
+
+                <button
+                    onClick={() => setShowPercentages(!showPercentages)}
+                    className={`px-3 py-1.5 rounded text-sm font-medium border transition-colors ${showPercentages ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800' : 'bg-card text-muted-foreground border-border hover:bg-muted'}`}
+                >
+                    {showPercentages ? 'Ocultar %' : 'Mostrar %'}
+                </button>
+
+                <div className="w-px h-8 bg-gray-200"></div>
+
+                {/* Filter Controls */}
+                <div className="flex items-center gap-2 relative">
+                    <div className="relative">
+                        <input
+                            type="text"
+                            placeholder="🔍 Buscar..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="pl-3 pr-8 py-1.5 text-sm border border-border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none w-40 focus:w-60 transition-all bg-input text-foreground"
+                        />
+                        {searchTerm && (
+                            <button
+                                onClick={() => setSearchTerm('')}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-slate-200"
+                            >
+                                ✕
+                            </button>
+                        )}
+                    </div>
+
+                    <button
+                        onClick={() => setShowFilters(!showFilters)}
+                        className={`px-3 py-1.5 rounded text-sm font-medium border transition-colors flex items-center gap-1 ${showFilters || filterType !== 'ALL' || filterMinAmount || filterMaxAmount ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800' : 'bg-card text-muted-foreground border-border hover:bg-muted'}`}
+                    >
+                        <span>🌪️ Filtros</span>
+                        {(filterType !== 'ALL' || filterMinAmount || filterMaxAmount) && <span className="w-2 h-2 rounded-full bg-blue-500"></span>}
+                    </button>
+
+                    {/* Filter Popover */}
+                    {showFilters && (
+                        <div className="absolute top-full right-0 mt-2 w-64 bg-card rounded-lg shadow-xl border border-border p-4 z-50">
+                            <h3 className="text-xs font-semibold text-muted-foreground uppercase mb-3">Filtrar por</h3>
+
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="block text-sm text-foreground mb-1">Tipo</label>
+                                    <select
+                                        value={filterType}
+                                        onChange={(e) => setFilterType(e.target.value as any)}
+                                        className="w-full border border-border rounded p-1.5 text-sm bg-input text-foreground"
+                                    >
+                                        <option value="ALL">Todos</option>
+                                        <option value="INCOME">Solo Ingresos</option>
+                                        <option value="EXPENSE">Solo Gastos</option>
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm text-foreground mb-1">Monto Total</label>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="number"
+                                            placeholder="Min"
+                                            value={filterMinAmount}
+                                            onChange={(e) => setFilterMinAmount(e.target.value)}
+                                            className="w-1/2 border border-border rounded p-1.5 text-sm bg-input text-foreground"
+                                        />
+                                        <input
+                                            type="number"
+                                            placeholder="Max"
+                                            value={filterMaxAmount}
+                                            onChange={(e) => setFilterMaxAmount(e.target.value)}
+                                            className="w-1/2 border border-border rounded p-1.5 text-sm bg-input text-foreground"
+                                        />
+                                    </div>
+                                </div>
+
+                                {(filterType !== 'ALL' || filterMinAmount || filterMaxAmount) && (
+                                    <button
+                                        onClick={() => {
+                                            setFilterType('ALL');
+                                            setFilterMinAmount('');
+                                            setFilterMaxAmount('');
+                                        }}
+                                        className="w-full mt-2 text-xs text-red-600 hover:text-red-700 font-medium py-1"
+                                    >
+                                        Limpiar Filtros
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
 
                 <div className="w-px h-8 bg-gray-200"></div>
 
@@ -1290,7 +1464,7 @@ export default function FlowGrid() {
             </div>
 
             {/* Info */}
-            <div className="text-xs text-gray-500 flex items-center gap-4 flex-shrink-0">
+            <div className="p-3 text-xs text-gray-500 dark:text-slate-400 flex items-center gap-4 flex-shrink-0 bg-gray-50 dark:bg-slate-900/50 border-b border-gray-200 dark:border-slate-800">
                 <span>💡 <strong>Doble click</strong> para ingresar monto</span>
                 <span>💡 <strong>Click</strong> para ver detalle</span>
                 <span>💡 <strong>▶</strong> para expandir subcategorías</span>
@@ -1298,207 +1472,286 @@ export default function FlowGrid() {
 
             {/* Matrix Table */}
             <div
-                className="bg-white rounded-lg border border-gray-200 shadow flex-1 min-h-0"
+                className="bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-800 shadow flex-1 min-h-0 transition-colors duration-300 overflow-auto"
                 style={{
-                    overflow: 'scroll',
-                    scrollbarWidth: 'auto',
+                    overflowX: 'scroll',
+                    overflowY: 'auto',
+                    scrollbarWidth: 'thin',
                     scrollbarColor: '#64748b #e2e8f0'
                 }}
             >
-                <table className="min-w-full divide-y divide-gray-200 text-sm">
-                    <thead className="bg-gray-50 sticky top-0 z-20">
-                        <tr>
-                            <th className="sticky left-0 bg-gray-50 z-30 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-48 border-r border-gray-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
-                                Concepto
-                            </th>
-                            {data.columns.map((col, idx) => (
-                                <th key={idx} className="px-2 py-2 text-center text-xs font-medium text-gray-500 tracking-wider min-w-[80px]">
-                                    {col.labelSub ? (
-                                        <div className="flex flex-col items-center">
-                                            <span className="text-gray-400 text-[10px] uppercase">{col.labelMain}</span>
-                                            <span className="font-semibold text-gray-600">{col.labelSub}</span>
-                                        </div>
-                                    ) : (
-                                        <span className="capitalize font-semibold">{col.labelMain}</span>
-                                    )}
+                {/* Main Grid */}
+                <div className="relative min-w-max">
+                    <table className="w-full border-collapse text-sm">
+                        <thead className="bg-muted/50 sticky top-0 z-20">
+                            <tr>
+                                <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider sticky left-0 bg-muted/90 z-30 border-r border-border min-w-[200px] backdrop-blur-sm">
+                                    Categoría / Concepto
                                 </th>
-                            ))}
-                            {showVariations && data.columns.length > 1 && (
-                                <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px] bg-blue-50 border-l-2 border-blue-200">
-                                    Variación
+                                {data.columns.map((col, idx) => (
+                                    <Fragment key={idx}>
+                                        <th
+                                            onClick={() => handleSort(idx)}
+                                            className="px-2 py-2 text-center text-xs font-medium text-gray-500 dark:text-slate-400 tracking-wider min-w-[80px] cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 select-none group/th"
+                                        >
+                                            {col.labelSub ? (
+                                                <div className="flex flex-col items-center">
+                                                    <span className="text-gray-400 text-[10px] uppercase">{col.labelMain}</span>
+                                                    <span className="font-semibold text-gray-600 group-hover/th:text-blue-600">{col.labelSub} {sortConfig?.key === idx && (sortConfig.direction === 'asc' ? '↑' : '↓')}</span>
+                                                </div>
+                                            ) : (
+                                                <span className="capitalize font-semibold group-hover/th:text-blue-600">{col.labelMain} {sortConfig?.key === idx && (sortConfig.direction === 'asc' ? '↑' : '↓')}</span>
+                                            )}
+                                        </th>
+                                        {showPercentages && (
+                                            <th
+                                                onClick={() => handleSort(idx)}
+                                                className="px-1 py-1 text-center text-xs font-medium text-gray-400 bg-gray-50 dark:bg-slate-800 uppercase tracking-widest w-[40px] border-r border-gray-100 dark:border-slate-700 cursor-pointer hover:bg-gray-200 dark:hover:bg-slate-700 select-none"
+                                            >
+                                                %
+                                            </th>
+                                        )}
+                                    </Fragment>
+                                ))}
+                                {showVariations && data.columns.length > 1 && (
+                                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px] bg-blue-50 border-l-2 border-blue-200">
+                                        Variación
+                                    </th>
+                                )}
+                                <th
+                                    onClick={() => handleSort('total')}
+                                    className="px-4 py-2 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider sticky right-0 bg-muted/90 z-30 border-l border-border min-w-[120px] backdrop-blur-sm shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                                    Total
                                 </th>
-                            )}
-                            <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider font-bold bg-gray-100 min-w-[100px]">
-                                Total
-                            </th>
-                        </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                        {/* INGRESOS SECTION */}
-                        <tr className="bg-emerald-50/50">
-                            <td className="sticky left-0 bg-emerald-50/50 z-10 px-4 py-2 font-bold text-emerald-800 border-r border-gray-200 flex justify-between items-center group">
-                                <span>📈 INGRESOS</span>
-                                <button
-                                    onClick={() => handleAddCategory('INCOME')}
-                                    className="w-6 h-6 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded-full flex items-center justify-center text-sm ml-2 shadow-sm transition-transform hover:scale-110"
-                                    title="Agregar Categoría de Ingreso"
-                                >
-                                    +
-                                </button>
-                            </td>
-                            {data.columns.map((_, i) => <td key={i}></td>)}
-                            {showVariations && data.columns.length > 1 && <td className="bg-blue-50/50"></td>}
-                            <td></td>
-                        </tr>
-                        {data.incomeRows.map((row, i) => (
-                            <Fragment key={`${row.category.id}-${i}`}>
-                                {renderCategoryRow(row, 'INCOME')}
-                            </Fragment>
-                        ))}
-                        <tr className="bg-emerald-100/50 font-bold text-emerald-900">
-                            <td className="sticky left-0 bg-emerald-100 z-10 px-4 py-2 border-r border-emerald-200">Total Ingresos</td>
-                            {calculatedTotals.income.map((val, i) => (
-                                <td key={i} className="px-3 py-2 text-right font-medium">{formatMoney(val)}</td>
-                            ))}
-                            {showVariations && data.columns.length > 1 && (
-                                <td className={`px-2 py-2 text-center font-bold bg-blue-100/50 border-l-2 border-blue-200 ${getVariationClass(
-                                    calculatedTotals.income[calculatedTotals.income.length - 1] || 0,
-                                    calculatedTotals.income[calculatedTotals.income.length - 2] || 0
-                                )}`}>
-                                    {formatVariation(
-                                        calculatedTotals.income[calculatedTotals.income.length - 1] || 0,
-                                        calculatedTotals.income[calculatedTotals.income.length - 2] || 0
-                                    )}
+                                {showPercentages && (
+                                    <th className="px-2 py-2 text-right text-[10px] font-semibold text-muted-foreground uppercase tracking-wider sticky right-[-50px] bg-muted z-30 border-l border-border">
+                                        %
+                                    </th>
+                                )}
+                            </tr>
+                            {/* Summary Headers */}
+                            <tr className="bg-blue-50/20">
+                                <td className="sticky left-0 bg-blue-50/20 z-10 px-4 py-2 border-r border-blue-100 dark:border-blue-900/30 font-semibold text-blue-700 dark:text-blue-400">
+                                    🟢 Ingresos Totales
                                 </td>
+                            </tr>
+                        </thead>
+                        <tbody className="bg-white dark:bg-slate-900 divide-y divide-gray-200 dark:divide-slate-800">
+                            {/* INGRESOS SECTION */}
+                            {filterType !== 'EXPENSE' && (
+                                <>
+                                    <tr className="bg-emerald-50/50 dark:bg-emerald-900/10">
+                                        <td className="sticky left-0 bg-emerald-50/50 dark:bg-emerald-900/10 z-10 px-4 py-2 font-bold text-emerald-800 dark:text-emerald-300 border-r border-gray-200 dark:border-slate-800 flex justify-between items-center group">
+                                            <span>📈 INGRESOS</span>
+                                            <button
+                                                onClick={() => handleAddCategory('INCOME')}
+                                                className="w-6 h-6 bg-emerald-100 dark:bg-emerald-900/40 hover:bg-emerald-200 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 rounded-full flex items-center justify-center text-sm ml-2 shadow-sm transition-transform hover:scale-110"
+                                                title="Agregar Categoría de Ingreso"
+                                            >
+                                                +
+                                            </button>
+                                        </td>
+                                        {data.columns.map((_, i) => (
+                                            <Fragment key={i}>
+                                                <td></td>
+                                                {showPercentages && <td></td>}
+                                            </Fragment>
+                                        ))}
+                                        {showVariations && data.columns.length > 1 && <td className="bg-blue-50/50 dark:bg-slate-800/30"></td>}
+                                        <td></td>
+                                    </tr>
+                                    {getSortedRows(getFilteredRows(data.incomeRows, 'INCOME')).map((row, i) => (
+                                        <Fragment key={`${row.category.id}-${i}`}>
+                                            {renderCategoryRow(row, 'INCOME')}
+                                        </Fragment>
+                                    ))}
+                                    <tr className="bg-emerald-100/50 dark:bg-emerald-900/20 font-bold text-emerald-900 dark:text-emerald-300">
+                                        <td className="sticky left-0 bg-emerald-100 dark:bg-emerald-900/30 z-10 px-4 py-2 border-r border-emerald-200 dark:border-emerald-800">Total Ingresos</td>
+                                        {calculatedTotals.income.map((val, i) => (
+                                            <Fragment key={i}>
+                                                <td className="px-3 py-2 text-right font-medium">{formatMoney(val)}</td>
+                                                {showPercentages && (
+                                                    <td className="px-1 py-2 text-right text-xs text-gray-400 dark:text-slate-500 bg-emerald-50/20 dark:bg-emerald-900/10 tabular-nums">
+                                                        100%
+                                                    </td>
+                                                )}
+                                            </Fragment>
+                                        ))}
+                                        {showVariations && data.columns.length > 1 && (
+                                            <td className={`px-2 py-2 text-center font-bold bg-blue-100/50 dark:bg-slate-800/30 border-l-2 border-blue-200 dark:border-slate-700 ${getVariationClass(
+                                                calculatedTotals.income[calculatedTotals.income.length - 1] || 0,
+                                                calculatedTotals.income[calculatedTotals.income.length - 2] || 0
+                                            )}`}>
+                                                {formatVariation(
+                                                    calculatedTotals.income[calculatedTotals.income.length - 1] || 0,
+                                                    calculatedTotals.income[calculatedTotals.income.length - 2] || 0
+                                                )}
+                                            </td>
+                                        )}
+                                        <td className="px-4 py-2 text-right font-bold bg-emerald-100 dark:bg-emerald-900/30">
+                                            {formatMoney(calculatedTotals.incomeGrandTotal)}
+                                        </td>
+                                        {showPercentages && <td className="bg-emerald-100 dark:bg-emerald-900/30"></td>}
+                                    </tr>
+                                </>
                             )}
-                            <td className="px-4 py-2 text-right font-bold bg-emerald-100">
-                                {formatMoney(calculatedTotals.incomeGrandTotal)}
-                            </td>
-                        </tr>
 
-                        {/* Separador */}
-                        <tr className="h-2 bg-gray-100"><td colSpan={data.columns.length + (showVariations ? 3 : 2)}></td></tr>
 
-                        {/* GASTOS SECTION */}
-                        <tr className="bg-rose-50/50">
-                            <td className="sticky left-0 bg-rose-50/50 z-10 px-4 py-2 font-bold text-rose-800 border-r border-gray-200 flex justify-between items-center group">
-                                <span>📉 GASTOS</span>
-                                <button
-                                    onClick={() => handleAddCategory('EXPENSE')}
-                                    className="w-6 h-6 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-full flex items-center justify-center text-sm ml-2 shadow-sm transition-transform hover:scale-110"
-                                    title="Agregar Categoría de Gasto"
-                                >
-                                    +
-                                </button>
-                            </td>
-                            {data.columns.map((_, i) => <td key={i}></td>)}
-                            {showVariations && data.columns.length > 1 && <td className="bg-blue-50/50"></td>}
-                            <td></td>
-                        </tr>
-                        {data.expenseRows.map((row, i) => (
-                            <Fragment key={`${row.category.id}-${i}`}>
-                                {renderCategoryRow(row, 'EXPENSE')}
-                            </Fragment>
-                        ))}
-                        <tr className="bg-rose-100/50 font-bold text-rose-900">
-                            <td className="sticky left-0 bg-rose-100 z-10 px-4 py-2 border-r border-rose-200">Total Gastos</td>
-                            {calculatedTotals.expense.map((val, i) => (
-                                <td key={i} className="px-3 py-2 text-right font-medium">{formatMoney(val)}</td>
-                            ))}
-                            {showVariations && data.columns.length > 1 && (
-                                <td className={`px-2 py-2 text-center font-bold bg-blue-100/50 border-l-2 border-blue-200 ${getVariationClass(
-                                    calculatedTotals.expense[calculatedTotals.expense.length - 1] || 0,
-                                    calculatedTotals.expense[calculatedTotals.expense.length - 2] || 0,
-                                    true
-                                )}`}>
-                                    {formatVariation(
-                                        calculatedTotals.expense[calculatedTotals.expense.length - 1] || 0,
-                                        calculatedTotals.expense[calculatedTotals.expense.length - 2] || 0
-                                    )}
-                                </td>
+                            {/* Separador */}
+                            <tr className="h-2 bg-gray-100 dark:bg-slate-800"><td colSpan={data.columns.length * (showPercentages ? 2 : 1) + (showVariations ? 3 : 2)}></td></tr>
+
+                            {/* GASTOS SECTION */}
+                            {filterType !== 'INCOME' && (
+                                <>
+                                    <tr className="bg-rose-50/50 dark:bg-rose-900/10">
+                                        <td className="sticky left-0 bg-rose-50/50 dark:bg-rose-900/10 z-10 px-4 py-2 font-bold text-rose-800 dark:text-rose-300 border-r border-gray-200 dark:border-slate-800 flex justify-between items-center group">
+                                            <span>📉 GASTOS</span>
+                                            <button
+                                                onClick={() => handleAddCategory('EXPENSE')}
+                                                className="w-6 h-6 bg-rose-100 dark:bg-rose-900/40 hover:bg-rose-200 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 rounded-full flex items-center justify-center text-sm ml-2 shadow-sm transition-transform hover:scale-110"
+                                                title="Agregar Categoría de Gasto"
+                                            >
+                                                +
+                                            </button>
+                                        </td>
+                                        {data.columns.map((_, i) => (
+                                            <Fragment key={i}>
+                                                <td></td>
+                                                {showPercentages && <td></td>}
+                                            </Fragment>
+                                        ))}
+                                        {showVariations && data.columns.length > 1 && <td className="bg-blue-50/50 dark:bg-slate-800/30"></td>}
+                                        <td></td>
+                                    </tr>
+                                    {getSortedRows(getFilteredRows(data.expenseRows, 'EXPENSE')).map((row, i) => (
+                                        <Fragment key={`${row.category.id}-${i}`}>
+                                            {renderCategoryRow(row, 'EXPENSE')}
+                                        </Fragment>
+                                    ))}
+                                    <tr className="bg-rose-100/50 dark:bg-rose-900/20 font-bold text-rose-900 dark:text-rose-300">
+                                        <td className="sticky left-0 bg-rose-100 dark:bg-rose-900/30 z-10 px-4 py-2 border-r border-rose-200 dark:border-rose-800">Total Gastos</td>
+                                        {calculatedTotals.expense.map((val, i) => (
+                                            <Fragment key={i}>
+                                                <td className="px-3 py-2 text-right font-medium">{formatMoney(val)}</td>
+                                                {showPercentages && (
+                                                    <td className="px-1 py-2 text-right text-xs text-gray-400 dark:text-slate-500 bg-rose-50/20 dark:bg-rose-900/10 tabular-nums">
+                                                        100%
+                                                    </td>
+                                                )}
+                                            </Fragment>
+                                        ))}
+                                        {showVariations && data.columns.length > 1 && (
+                                            <td className={`px-2 py-2 text-center font-bold bg-blue-100/50 dark:bg-slate-800/30 border-l-2 border-blue-200 dark:border-slate-700 ${getVariationClass(
+                                                calculatedTotals.expense[calculatedTotals.expense.length - 1] || 0,
+                                                calculatedTotals.expense[calculatedTotals.expense.length - 2] || 0,
+                                                true
+                                            )}`}>
+                                                {formatVariation(
+                                                    calculatedTotals.expense[calculatedTotals.expense.length - 1] || 0,
+                                                    calculatedTotals.expense[calculatedTotals.expense.length - 2] || 0
+                                                )}
+                                            </td>
+                                        )}
+                                        <td className="px-4 py-2 text-right font-bold bg-rose-100">
+                                            {formatMoney(calculatedTotals.expenseGrandTotal)}
+                                        </td>
+                                        {showPercentages && <td className="bg-rose-100"></td>}
+                                    </tr>
+                                </>
                             )}
-                            <td className="px-4 py-2 text-right font-bold bg-rose-100">
-                                {formatMoney(calculatedTotals.expenseGrandTotal)}
-                            </td>
-                        </tr>
 
-                        {/* SALDO NETO */}
-                        <tr className="bg-gray-900 text-white font-bold text-base sticky bottom-0 z-20">
-                            <td className="sticky left-0 bg-gray-900 z-30 px-4 py-3 border-r border-gray-700">💰 SALDO</td>
-                            {calculatedTotals.income.map((inc, i) => {
-                                const balance = inc - calculatedTotals.expense[i];
-                                return (
-                                    <td key={i} className={`px-3 py-3 text-right tabular-nums ${balance < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-                                        {formatMoney(balance)}
-                                    </td>
-                                );
-                            })}
-                            {showVariations && data.columns.length > 1 && (() => {
-                                const lastIdx = calculatedTotals.income.length - 1;
-                                const prevIdx = calculatedTotals.income.length - 2;
-                                const lastBalance = (calculatedTotals.income[lastIdx] || 0) - (calculatedTotals.expense[lastIdx] || 0);
-                                const prevBalance = (calculatedTotals.income[prevIdx] || 0) - (calculatedTotals.expense[prevIdx] || 0);
-                                return (
-                                    <td className={`px-2 py-3 text-center font-bold border-l-2 border-gray-700 ${lastBalance >= prevBalance ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                        {formatVariation(lastBalance, prevBalance)}
-                                    </td>
-                                );
-                            })()}
-                            {(() => {
-                                const totalBalance = calculatedTotals.incomeGrandTotal - calculatedTotals.expenseGrandTotal;
-                                return (
-                                    <td className={`px-4 py-3 text-right ${totalBalance >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-                                        {formatMoney(totalBalance)}
-                                    </td>
-                                );
-                            })()}
-                        </tr>
-
-                        {/* SALDO ACUMULADO */}
-                        <tr className="bg-gray-800 text-white font-bold text-sm">
-                            <td className="sticky left-0 bg-gray-800 z-30 px-4 py-2 border-r border-gray-600">📊 SALDO Acumulado</td>
-                            {(() => {
-                                let runningTotal = 0;
-                                return calculatedTotals.income.map((inc, i) => {
-                                    const periodBalance = inc - calculatedTotals.expense[i];
-                                    runningTotal += periodBalance;
+                            {/* SALDO NETO */}
+                            <tr className="bg-slate-900 dark:bg-slate-950 text-white font-bold text-base sticky bottom-0 z-20 shadow-[0_-2px_5px_rgba(0,0,0,0.1)] transition-colors">
+                                <td className="sticky left-0 bg-slate-900 dark:bg-slate-950 z-30 px-4 py-3 border-r border-slate-700 dark:border-slate-800">💰 SALDO</td>
+                                {calculatedTotals.income.map((inc, i) => {
+                                    const periodBalance = (calculatedTotals.income[i] || 0) - (calculatedTotals.expense[i] || 0);
                                     return (
-                                        <td key={i} className={`px-3 py-2 text-right tabular-nums ${runningTotal < 0 ? 'text-rose-300' : 'text-emerald-300'}`}>
-                                            {formatMoney(runningTotal)}
+                                        <Fragment key={i}>
+                                            <td className={`px-3 py-3 text-right font-bold ${periodBalance >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                {formatMoney(periodBalance)}
+                                            </td>
+                                            {showPercentages && <td className="bg-gray-800"></td>}
+                                        </Fragment>
+                                    );
+                                })}
+                                {showVariations && data.columns.length > 1 && (() => {
+                                    const lastIdx = calculatedTotals.income.length - 1;
+                                    const prevIdx = calculatedTotals.income.length - 2;
+                                    const lastBalance = (calculatedTotals.income[lastIdx] || 0) - (calculatedTotals.expense[lastIdx] || 0);
+                                    const prevBalance = (calculatedTotals.income[prevIdx] || 0) - (calculatedTotals.expense[prevIdx] || 0);
+                                    return (
+                                        <td className={`px-2 py-3 text-center font-bold border-l-2 border-gray-700 ${lastBalance >= prevBalance ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                            {formatVariation(lastBalance, prevBalance)}
                                         </td>
                                     );
-                                });
-                            })()}
-                            {showVariations && data.columns.length > 1 && (
-                                <td className="px-2 py-2 text-center text-gray-400 border-l-2 border-gray-700">
-                                    —
-                                </td>
-                            )}
-                            {(() => {
-                                const totalBalance = calculatedTotals.incomeGrandTotal - calculatedTotals.expenseGrandTotal;
-                                return (
-                                    <td className={`px-4 py-2 text-right ${totalBalance >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-                                        {formatMoney(totalBalance)}
+                                })()}
+                                {(() => {
+                                    const totalBalance = calculatedTotals.incomeGrandTotal - calculatedTotals.expenseGrandTotal;
+                                    return (
+                                        <Fragment>
+                                            <td className={`px-4 py-3 text-right ${totalBalance >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                                                {formatMoney(totalBalance)}
+                                            </td>
+                                            {showPercentages && <td className="bg-gray-800"></td>}
+                                        </Fragment>
+                                    );
+                                })()}
+                            </tr>
+
+                            {/* SALDO ACUMULADO */}
+                            <tr className="bg-slate-800 dark:bg-slate-900 text-white font-bold text-sm transition-colors">
+                                <td className="sticky left-0 bg-slate-800 dark:bg-slate-900 z-30 px-4 py-2 border-r border-slate-600 dark:border-slate-800">📊 SALDO Acumulado</td>
+                                {(() => {
+                                    let runningTotal = 0;
+                                    return calculatedTotals.income.map((inc, i) => {
+                                        const periodBalance = inc - calculatedTotals.expense[i];
+                                        runningTotal += periodBalance;
+                                        return (
+                                            <Fragment key={i}>
+                                                <td className={`px-3 py-2 text-right tabular-nums ${runningTotal < 0 ? 'text-rose-300' : 'text-emerald-300'}`}>
+                                                    {formatMoney(runningTotal)}
+                                                </td>
+                                                {showPercentages && <td className="bg-gray-800"></td>}
+                                            </Fragment>
+                                        );
+                                    });
+                                })()}
+                                {showVariations && data.columns.length > 1 && (
+                                    <td className="px-2 py-2 text-center text-gray-400 border-l-2 border-gray-700">
+                                        —
                                     </td>
-                                );
-                            })()}
-                        </tr>
-                    </tbody>
-                </table>
+                                )}
+                                {(() => {
+                                    const totalBalance = calculatedTotals.incomeGrandTotal - calculatedTotals.expenseGrandTotal;
+                                    return (
+                                        <Fragment>
+                                            <td className={`px-4 py-2 text-right ${totalBalance >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                                                {formatMoney(totalBalance)}
+                                            </td>
+                                            {showPercentages && <td className="bg-gray-800"></td>}
+                                        </Fragment>
+                                    );
+                                })()}
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             {/* Modal de detalle */}
-            {detailModal && (
-                <TransactionDetail
-                    categoryId={detailModal.categoryId}
-                    categoryName={detailModal.categoryName}
-                    startDate={detailModal.startDate}
-                    endDate={detailModal.endDate}
-                    type={detailModal.type}
-                    onClose={() => setDetailModal(null)}
-                    onUpdate={handleDetailUpdate}
-                />
-            )}
+            {
+                detailModal && (
+                    <TransactionDetail
+                        categoryId={detailModal.categoryId}
+                        categoryName={detailModal.categoryName}
+                        startDate={detailModal.startDate}
+                        endDate={detailModal.endDate}
+                        type={detailModal.type}
+                        onClose={() => setDetailModal(null)}
+                        onUpdate={handleDetailUpdate}
+                    />
+                )
+            }
 
             {/* Modal de operaciones masivas */}
             <BulkOperationsModal
@@ -1514,6 +1767,6 @@ export default function FlowGrid() {
                 ]}
                 granularity={granularity}
             />
-        </div>
+        </div >
     );
 }

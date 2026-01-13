@@ -47,18 +47,18 @@ interface ProjectionGridProps {
 }
 
 const CATEGORIES = [
-    { id: 'COMBUSTIBLE', name: '⛽ Combustible', color: 'bg-amber-100 text-amber-800' },
-    { id: 'ALIMENTOS', name: '🛒 Alimentos', color: 'bg-orange-100 text-orange-800' },
-    { id: 'ENTRETENIMIENTO', name: '🎬 Entretenimiento', color: 'bg-pink-100 text-pink-800' },
-    { id: 'SERVICIOS', name: '📱 Servicios', color: 'bg-cyan-100 text-cyan-800' },
-    { id: 'SEGUROS', name: '🛡️ Seguros', color: 'bg-indigo-100 text-indigo-800' },
-    { id: 'SALUD', name: '💊 Salud', color: 'bg-red-100 text-red-800' },
-    { id: 'GASTRONOMIA', name: '🍔 Gastronomía', color: 'bg-yellow-100 text-yellow-800' },
-    { id: 'ROPA', name: '👕 Ropa', color: 'bg-violet-100 text-violet-800' },
-    { id: 'TRANSPORTE', name: '🚗 Transporte', color: 'bg-slate-100 text-slate-800' },
-    { id: 'IMPUESTOS', name: '📋 Impuestos', color: 'bg-gray-100 text-gray-800' },
-    { id: 'CARGOS', name: '💸 Cargos', color: 'bg-rose-100 text-rose-800' },
-    { id: 'OTROS', name: '📦 Otros', color: 'bg-gray-100 text-gray-800' }
+    { id: 'COMBUSTIBLE', name: '⛽ Combustible', color: 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-400' },
+    { id: 'ALIMENTOS', name: '🛒 Alimentos', color: 'bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-400' },
+    { id: 'ENTRETENIMIENTO', name: '🎬 Entretenimiento', color: 'bg-pink-100 dark:bg-pink-900/30 text-pink-800 dark:text-pink-400' },
+    { id: 'SERVICIOS', name: '📱 Servicios', color: 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-800 dark:text-cyan-400' },
+    { id: 'SEGUROS', name: '🛡️ Seguros', color: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-400' },
+    { id: 'SALUD', name: '💊 Salud', color: 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400' },
+    { id: 'GASTRONOMIA', name: '🍔 Gastronomía', color: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400' },
+    { id: 'ROPA', name: '👕 Ropa', color: 'bg-violet-100 dark:bg-violet-900/30 text-violet-800 dark:text-violet-400' },
+    { id: 'TRANSPORTE', name: '🚗 Transporte', color: 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-300' },
+    { id: 'IMPUESTOS', name: '📋 Impuestos', color: 'bg-gray-100 dark:bg-slate-800 text-gray-800 dark:text-slate-300' },
+    { id: 'CARGOS', name: '💸 Cargos', color: 'bg-rose-100 dark:bg-rose-900/30 text-rose-800 dark:text-rose-400' },
+    { id: 'OTROS', name: '📦 Otros', color: 'bg-gray-100 dark:bg-slate-800 text-gray-800 dark:text-slate-300' }
 ];
 
 export default function ProjectionGrid({
@@ -75,6 +75,7 @@ export default function ProjectionGrid({
     const [monthlyOverrides, setMonthlyOverrides] = useState<Map<string, number>>(new Map());
     const [editingCell, setEditingCell] = useState<{ itemId: string; yearMonth: string; value: string } | null>(null);
     const [savingCell, setSavingCell] = useState<string | null>(null);
+    const [showPercentages, setShowPercentages] = useState(false);
 
     // Load monthly overrides
     useEffect(() => {
@@ -232,7 +233,7 @@ export default function ProjectionGrid({
             {/* Summary by Category */}
             {showCategoryDetails && statementItems.length > 0 && (
                 <div className="mb-6">
-                    <h3 className="text-sm font-semibold text-gray-600 mb-3">📂 Gastos por Categoría (click para expandir)</h3>
+                    <h3 className="text-sm font-semibold text-gray-600 dark:text-slate-400 mb-3">📂 Gastos por Categoría</h3>
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                         {activeCategories.map(category => {
                             const items = getCategoryItems(category.id);
@@ -249,24 +250,28 @@ export default function ProjectionGrid({
                                             <span className="text-sm font-medium">{category.name}</span>
                                             <span className="text-xs">{isExpanded ? '▼' : '▶'}</span>
                                         </div>
-                                        <div className="font-bold mt-1">{formatMoney(total)}</div>
+                                        <div className="font-bold mt-1">
+                                            {formatMoney(total)}
+                                            {total > 0 && (() => {
+                                                const grandTotal = statementItems.reduce((acc, i) => acc + (Number(i.amount) || 0), 0);
+                                                const pct = grandTotal > 0 ? (total / grandTotal) * 100 : 0;
+                                                return <span className="text-xs font-normal ml-1 opacity-80">({pct.toFixed(0)}%)</span>;
+                                            })()}
+                                        </div>
                                         <div className="text-xs opacity-75">{items.length} items</div>
                                     </button>
 
                                     {isExpanded && items.length > 0 && (
-                                        <div className="bg-white border rounded-lg shadow-sm max-h-48 overflow-y-auto">
+                                        <div className="bg-card border border-border rounded-lg shadow-sm max-h-48 overflow-y-auto">
                                             {items.map(item => (
-                                                <div key={item.id} className="px-3 py-2 border-b last:border-0 hover:bg-gray-50">
+                                                <div key={item.id} className="px-3 py-2 border-b border-border last:border-0 hover:bg-muted/50">
                                                     <div className="flex justify-between items-center">
-                                                        <span className="text-xs text-gray-700 truncate flex-1">
+                                                        <span className="text-xs text-foreground truncate flex-1">
                                                             {item.description}
                                                         </span>
-                                                        <span className="text-xs font-medium text-gray-900 ml-2">
+                                                        <span className="text-xs font-medium text-foreground ml-2">
                                                             {formatMoney(Number(item.amount))}
                                                         </span>
-                                                    </div>
-                                                    <div className="flex gap-2 mt-1">
-                                                        {item.isRecurring && <span className="text-[10px] text-green-600">🔄 Recurrente</span>}
                                                     </div>
                                                 </div>
                                             ))}
@@ -279,34 +284,47 @@ export default function ProjectionGrid({
                 </div>
             )}
 
+            {/* Controls */}
+            <div className="flex justify-end px-2">
+                <button
+                    onClick={() => setShowPercentages(!showPercentages)}
+                    className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${showPercentages ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800' : 'bg-card text-muted-foreground border-border hover:bg-muted'}`}
+                >
+                    {showPercentages ? 'Ocultar %' : 'Mostrar %'}
+                </button>
+            </div>
+
             {/* Monthly Projection Grid */}
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
                 <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                        <thead>
-                            <tr className="bg-gradient-to-r from-gray-50 to-gray-100">
-                                <th className="text-left px-3 py-3 font-semibold text-gray-700 sticky left-0 bg-gradient-to-r from-gray-50 to-gray-100 min-w-[220px] border-r border-gray-200">
-                                    Categoría
+                    <table className="w-full border-collapse text-sm">
+                        <thead className="bg-muted sticky top-0 z-20">
+                            <tr>
+                                <th className="px-3 py-3 text-left text-[10px] font-bold text-muted-foreground uppercase tracking-widest sticky left-0 top-0 bg-muted z-30 border-r border-border min-w-[200px]">
+                                    Categoría / Ítem
                                 </th>
-                                <th className="text-center px-2 py-3 font-semibold text-gray-700 min-w-[100px] bg-red-50 border-r border-red-100">
-                                    Resumen Actual
+                                <th className="px-2 py-3 text-right text-[10px] font-bold text-muted-foreground uppercase tracking-widest border-r border-red-100 dark:border-rose-900/30 bg-red-50/50 dark:bg-rose-900/20 w-[100px] sticky top-0">
+                                    Actual
                                 </th>
+                                {showPercentages && (
+                                    <th className="px-0 py-0 text-[8px] text-gray-300 dark:text-slate-600 font-normal uppercase vertical-lr tracking-tighter w-4 bg-red-50/10 dark:bg-rose-900/10 border-r border-red-100 dark:border-rose-900/30 sticky top-0">%</th>
+                                )}
                                 {months.map((month, idx) => (
-                                    <th
-                                        key={idx}
-                                        className="text-center px-2 py-3 font-medium text-gray-600 min-w-[90px] border-l border-gray-100"
-                                    >
-                                        <div className="text-xs text-gray-400 uppercase">
-                                            {format(month, 'MMM', { locale: es })}
-                                        </div>
-                                        <div className="text-xs font-semibold">
-                                            {format(month, 'yy')}
-                                        </div>
-                                    </th>
+                                    <Fragment key={idx}>
+                                        <th className="px-2 py-3 text-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest min-w-[90px] sticky top-0">
+                                            {format(month, 'MMM yy', { locale: es })}
+                                        </th>
+                                        {showPercentages && (
+                                            <th className="px-0 py-0 text-[8px] text-gray-300 dark:text-slate-600 font-normal uppercase vertical-lr tracking-tighter w-4 bg-gray-50/10 dark:bg-slate-800/10 border-r border-gray-100 dark:border-slate-700 sticky top-0">%</th>
+                                        )}
+                                    </Fragment>
                                 ))}
-                                <th className="text-center px-3 py-3 font-semibold text-gray-700 min-w-[100px] bg-gray-100 border-l border-gray-300">
+                                <th className="px-3 py-3 text-right text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-widest bg-gray-100 dark:bg-slate-900 border-l border-gray-200 dark:border-slate-800 w-[110px] sticky top-0">
                                     Total
                                 </th>
+                                {showPercentages && (
+                                    <th className="px-0 py-0 text-[8px] text-gray-300 dark:text-slate-600 font-normal uppercase vertical-lr tracking-tighter w-4 bg-gray-100/50 dark:bg-slate-900/50 border-l border-gray-200 dark:border-slate-800 sticky top-0">%</th>
+                                )}
                             </tr>
                         </thead>
                         <tbody>
@@ -314,59 +332,80 @@ export default function ProjectionGrid({
                                 const rowTotal = months.reduce((sum, m) => sum + getCategoryAmount(m, category.id), 0);
                                 const isExpanded = expandedCategories.has(category.id);
                                 const categoryItems = getCategoryItems(category.id);
-                                // FIX: respect IncludeInProjection for the "Resumen Actual" category total
                                 const currentTotal = categoryItems.reduce((sum, i) => {
                                     if (i.includeInProjection === false) return sum;
                                     return sum + Number(i.amount);
                                 }, 0);
 
-                                if (rowTotal === 0 && categoryItems.length === 0) return null;
+                                const uniqueProjectionGrandTotal = activeCategories.reduce((grandSum, cat) => {
+                                    return grandSum + months.reduce((mSum, m) => mSum + getCategoryAmount(m, cat.id), 0);
+                                }, 0);
+                                const percentage = uniqueProjectionGrandTotal > 0 ? (rowTotal / uniqueProjectionGrandTotal) * 100 : 0;
 
                                 return (
                                     <Fragment key={category.id}>
                                         <tr
                                             onClick={() => toggleCategory(category.id)}
-                                            className={`border-t border-gray-100 transition-colors cursor-pointer group ${rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'} ${isExpanded ? 'bg-indigo-50/50' : 'hover:bg-gray-50'}`}
+                                            className={`border-t border-border transition-colors cursor-pointer group ${rowIdx % 2 === 0 ? 'bg-card' : 'bg-muted/30'} ${isExpanded ? 'bg-indigo-50/50 dark:bg-indigo-900/20' : 'hover:bg-muted/50'}`}
                                         >
-                                            <td className="px-3 py-2 sticky left-0 border-r border-gray-200 group-hover:bg-gray-50 bg-inherit transition-colors">
+                                            <td className={`px-3 py-2 sticky left-0 border-r border-border z-10 transition-colors ${rowIdx % 2 === 0 ? 'bg-card' : 'bg-muted/40'} ${isExpanded ? 'bg-indigo-50 dark:bg-indigo-900/20' : 'group-hover:bg-muted'}`}>
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-gray-400 text-[10px] w-3">{isExpanded ? '▼' : '▶'}</span>
+                                                    <span className="text-muted-foreground text-[10px] w-3">{isExpanded ? '▼' : '▶'}</span>
                                                     <span className={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-medium ${category.color}`}>
                                                         {category.name}
                                                     </span>
                                                 </div>
                                             </td>
-                                            {/* Actual Summary */}
-                                            <td className="px-2 py-2 text-right border-r border-red-100 bg-red-50/30 font-bold text-gray-800 text-xs">
+                                            <td className="px-2 py-2 text-right border-r border-red-100 dark:border-rose-900/30 bg-red-50/30 dark:bg-rose-900/10 font-bold text-foreground text-xs text-nowrap">
                                                 {formatMoney(currentTotal)}
                                             </td>
+                                            {showPercentages && (
+                                                <td className="px-1 py-1 text-right text-[10px] text-gray-500 dark:text-slate-400 bg-red-50/30 dark:bg-rose-900/10 border-r border-red-100 dark:border-rose-900/30">
+                                                    {(() => {
+                                                        const totalCurrent = statementItems.reduce((acc, i) => acc + (Number(i.amount) || 0), 0);
+                                                        const pct = totalCurrent > 0 ? (currentTotal / totalCurrent) * 100 : 0;
+                                                        return pct > 0 ? `${pct.toFixed(0)}%` : '-';
+                                                    })()}
+                                                </td>
+                                            )}
                                             {months.map((month, colIdx) => {
                                                 const amount = getCategoryAmount(month, category.id);
                                                 return (
-                                                    <td
-                                                        key={colIdx}
-                                                        className="px-2 py-2 text-right border-l border-gray-50"
-                                                    >
-                                                        {amount > 0 ? (
-                                                            <span className="text-gray-700 font-medium text-xs">
-                                                                {formatMoney(amount)}
-                                                            </span>
-                                                        ) : (
-                                                            <span className="text-gray-300">-</span>
+                                                    <Fragment key={colIdx}>
+                                                        <td className="px-2 py-2 text-right border-l border-border">
+                                                            {amount > 0 ? (
+                                                                <span className="text-foreground font-medium text-xs">
+                                                                    {formatMoney(amount)}
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-muted-foreground">-</span>
+                                                            )}
+                                                        </td>
+                                                        {showPercentages && (
+                                                            <td className="px-1 py-1 text-right text-[10px] text-gray-400 dark:text-slate-500 bg-gray-50/20 dark:bg-slate-800/20 border-r border-gray-100 dark:border-slate-700">
+                                                                {(() => {
+                                                                    const colTotal = getMonthTotal(month);
+                                                                    const pct = colTotal > 0 ? (amount / colTotal) * 100 : 0;
+                                                                    return pct > 0 ? `${pct.toFixed(0)}%` : '-';
+                                                                })()}
+                                                            </td>
                                                         )}
-                                                    </td>
+                                                    </Fragment>
                                                 );
                                             })}
-                                            <td className="px-3 py-2 text-right font-semibold text-gray-800 bg-gray-50 border-l border-gray-200 text-xs">
+                                            <td className="px-3 py-2 text-right font-semibold text-foreground bg-muted border-l border-border text-xs">
                                                 {formatMoney(rowTotal)}
                                             </td>
+                                            {showPercentages && (
+                                                <td className="px-1 py-1 text-right text-[10px] text-gray-500 dark:text-slate-400 bg-gray-100 dark:bg-slate-700 border-l border-gray-200 dark:border-slate-600">
+                                                    {percentage > 0 ? `${percentage.toFixed(0)}%` : '-'}
+                                                </td>
+                                            )}
                                         </tr>
 
-                                        {/* EXPANDED DETAILS ROWS */}
                                         {isExpanded && categoryItems.map(item => (
-                                            <tr key={item.id} className="bg-white border-b border-gray-100 hover:bg-gray-50 group/item transition-colors">
-                                                {/* Control Column */}
-                                                <td className="px-3 py-2 sticky left-0 bg-white group-hover/item:bg-gray-50 border-r border-gray-200 transition-colors">
+                                            <tr key={item.id} className="bg-card border-b border-border hover:bg-muted/50 group/item transition-colors">
+                                                <td className="px-3 py-2 sticky left-0 bg-card z-10 border-r border-border group-hover/item:bg-muted/50 transition-colors">
                                                     <div className="flex items-center gap-2 pl-4">
                                                         <button
                                                             onClick={(e) => {
@@ -375,16 +414,15 @@ export default function ProjectionGrid({
                                                             }}
                                                             className={`flex-shrink-0 w-4 h-4 flex items-center justify-center rounded border transition-colors ${(item.includeInProjection ?? true)
                                                                 ? 'bg-indigo-600 border-indigo-600 text-white'
-                                                                : 'bg-white border-gray-300 text-transparent hover:border-gray-400'
+                                                                : 'bg-card border-border text-transparent hover:border-border'
                                                                 }`}
                                                             title={(item.includeInProjection ?? true) ? "Incluido" : "Excluido"}
                                                         >
                                                             {(item.includeInProjection ?? true) && <span className="text-[9px]">✓</span>}
                                                         </button>
-
                                                         <div className="flex flex-col min-w-0 flex-1">
                                                             <div className="flex items-center gap-2">
-                                                                <span className={`text-xs truncate max-w-[140px] ${(item.includeInProjection ?? true) ? 'text-gray-700' : 'text-gray-400 line-through'}`} title={item.description}>
+                                                                <span className={`text-xs truncate max-w-[140px] ${(item.includeInProjection ?? true) ? 'text-foreground' : 'text-muted-foreground line-through'}`} title={item.description}>
                                                                     {item.description}
                                                                 </span>
                                                                 {onEditItem && (
@@ -397,92 +435,45 @@ export default function ProjectionGrid({
                                                                                 const val = e.target.value === '' ? null : parseFloat(e.target.value);
                                                                                 onEditItem(item.id, { projectedAmount: val });
                                                                             }}
-                                                                            className={`w-14 text-right text-[10px] border rounded px-0.5 py-0.5 outline-none focus:border-indigo-500 ${item.projectedAmount ? 'bg-yellow-50 border-yellow-200 text-yellow-800 font-medium' : 'border-gray-200 text-gray-500'}`}
-                                                                            title="Proyección manual"
+                                                                            className={`w-14 text-right text-[10px] border rounded px-0.5 py-0.5 outline-none focus:border-indigo-500 ${item.projectedAmount ? 'bg-yellow-50 dark:bg-yellow-900/30 border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-400 font-medium' : 'border-border text-muted-foreground bg-input'}`}
                                                                         />
                                                                         <select
                                                                             value={item.category || 'OTROS'}
                                                                             onClick={(e) => e.stopPropagation()}
                                                                             onChange={(e) => onEditItem(item.id, { category: e.target.value })}
-                                                                            className="w-[80px] text-[9px] border border-gray-200 rounded px-1 py-0.5 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                                                                            className="w-[80px] text-[9px] border border-gray-200 dark:border-slate-700 rounded px-1 py-0.5 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
                                                                         >
                                                                             {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                                                         </select>
                                                                     </div>
                                                                 )}
                                                             </div>
-                                                            <div className="flex items-center gap-2 mt-1">
-                                                                <input
-                                                                    type="text"
-                                                                    defaultValue={item.observations || ''}
-                                                                    key={`obs-${item.id}-${item.observations}`} // Key ensures re-render if external data changes
-                                                                    onClick={(e) => e.stopPropagation()}
-                                                                    onBlur={(e) => {
-                                                                        if (e.target.value !== (item.observations || '')) {
-                                                                            onEditItem?.(item.id, { observations: e.target.value });
-                                                                        }
-                                                                    }}
-                                                                    onKeyDown={(e) => {
-                                                                        if (e.key === 'Enter') {
-                                                                            e.currentTarget.blur();
-                                                                        }
-                                                                    }}
-                                                                    placeholder="Agregar observación..."
-                                                                    className="flex-1 text-[10px] text-gray-500 bg-transparent border-b border-transparent hover:border-gray-300 focus:border-indigo-400 focus:outline-none focus:bg-white px-1 py-0.5 transition-colors placeholder:text-gray-300 italic"
-                                                                />
-                                                            </div>
-                                                            <div className="flex items-center gap-2 mt-0.5">
-                                                                {onEditItem && (
-                                                                    <button
-                                                                        onClick={(e) => { e.stopPropagation(); onEditItem(item.id, { isRecurring: !item.isRecurring }); }}
-                                                                        className={`text-[9px] px-1 py-0 rounded border flex items-center gap-1 transition-colors ${item.isRecurring
-                                                                            ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
-                                                                            : 'bg-white border-gray-200 text-gray-400 hover:bg-gray-100'
-                                                                            }`}
-                                                                    >
-                                                                        {item.isRecurring ? '🔄 Recurrente' : '🛒 Único'}
-                                                                    </button>
-                                                                )}
-                                                                {item.installmentTotal && (
-                                                                    <span className="text-[9px] text-blue-600 bg-blue-50 px-1 rounded border border-blue-100">
-                                                                        Cuota {item.installmentCurrent}/{item.installmentTotal}
-                                                                    </span>
-                                                                )}
-                                                                <button
-                                                                    onClick={async (e) => {
-                                                                        e.stopPropagation();
-                                                                        if (confirm("¿Quitar este ítem de las proyecciones?")) {
-                                                                            await onEditItem?.(item.id, { includeInProjection: false });
-                                                                        }
-                                                                    }}
-                                                                    title="Quitar de proyecciones"
-                                                                    className="text-xs w-5 h-5 rounded flex items-center justify-center bg-red-50 text-red-400 hover:bg-red-100 transition-colors ml-auto"
-                                                                >
-                                                                    🗑️
-                                                                </button>
-                                                            </div>
+                                                            <input
+                                                                type="text"
+                                                                defaultValue={item.observations || ''}
+                                                                key={`obs-${item.id}-${item.observations}`}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                onBlur={(e) => {
+                                                                    if (e.target.value !== (item.observations || '')) {
+                                                                        onEditItem?.(item.id, { observations: e.target.value });
+                                                                    }
+                                                                }}
+                                                                onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                                                                placeholder="Agregar observación..."
+                                                                className="flex-1 text-[10px] text-gray-500 dark:text-slate-400 bg-transparent border-b border-transparent hover:border-gray-300 dark:hover:border-slate-600 focus:border-indigo-400 focus:outline-none focus:bg-white dark:focus:bg-slate-800 px-1 py-0.5 mt-1 transition-colors italic"
+                                                            />
                                                         </div>
                                                     </div>
                                                 </td>
-
-                                                {/* Actual Summary */}
-                                                {/* Actual Summary - Editable */}
                                                 {(() => {
                                                     const isExcluded = item.includeInProjection === false;
-                                                    const cellKey = `${item.id}-CURRENT`;
                                                     const isEditing = editingCell?.itemId === item.id && editingCell?.yearMonth === 'CURRENT';
-                                                    // For Current Summary, we display (and edit) item.amount directly
                                                     const displayVal = item.amount;
-
                                                     return (
                                                         <td
-                                                            className={`text-center px-2 py-2 text-xs border-r border-red-100 font-medium cursor-pointer transition-colors ${isExcluded ? 'bg-gray-50 text-gray-300' : 'bg-red-50/10 text-gray-700 hover:bg-red-50'}`}
-                                                            onDoubleClick={() => {
-                                                                if (!isExcluded) {
-                                                                    setEditingCell({ itemId: item.id, yearMonth: 'CURRENT', value: displayVal.toString() });
-                                                                }
-                                                            }}
-                                                            title={isExcluded ? 'Excluido' : 'Doble-click para editar monto actual'}
+                                                            colSpan={showPercentages ? 2 : 1}
+                                                            className={`text-right px-2 py-2 text-xs border-r border-red-100 dark:border-rose-900/30 font-medium cursor-pointer transition-colors ${isExcluded ? 'bg-gray-50 dark:bg-slate-800 text-gray-300 dark:text-slate-600' : 'bg-red-50/10 dark:bg-rose-900/5 text-gray-700 dark:text-slate-300 hover:bg-red-50 dark:hover:bg-rose-900/20'}`}
+                                                            onDoubleClick={() => !isExcluded && setEditingCell({ itemId: item.id, yearMonth: 'CURRENT', value: displayVal.toString() })}
                                                         >
                                                             {isEditing ? (
                                                                 <input
@@ -490,139 +481,101 @@ export default function ProjectionGrid({
                                                                     value={editingCell.value}
                                                                     onChange={(e) => setEditingCell({ ...editingCell!, value: e.target.value })}
                                                                     onBlur={async () => {
-                                                                        const newVal = parseFloat(editingCell.value);
-                                                                        if (!isNaN(newVal) && newVal !== displayVal) {
-                                                                            // Update ACTUAL AMOUNT
-                                                                            await onEditItem?.(item.id, { amount: newVal });
-                                                                        }
+                                                                        const newVal = parseFloat(editingCell!.value);
+                                                                        if (!isNaN(newVal) && newVal !== displayVal) await onEditItem?.(item.id, { amount: newVal });
                                                                         setEditingCell(null);
                                                                     }}
-                                                                    onKeyDown={(e) => {
-                                                                        if (e.key === 'Enter') {
-                                                                            e.currentTarget.blur();
-                                                                        }
-                                                                    }}
+                                                                    onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
                                                                     autoFocus
-                                                                    className="w-16 text-center bg-white border border-indigo-300 rounded px-1 py-0.5 text-xs outline-none shadow-sm"
+                                                                    className="w-16 text-right bg-white dark:bg-slate-800 border border-indigo-300 dark:border-indigo-600 rounded px-1 py-0.5 text-xs text-gray-800 dark:text-slate-100"
                                                                 />
-                                                            ) : (
-                                                                isExcluded ? '-' : formatMoney(Number(displayVal))
-                                                            )}
+                                                            ) : isExcluded ? '-' : formatMoney(Number(displayVal))}
                                                         </td>
                                                     );
                                                 })()}
-
-                                                {/* Monthly Projections - Editable */}
                                                 {months.map((m, idx) => {
                                                     const yearMonth = format(m, 'yyyy-MM');
                                                     const cellKey = `${item.id}-${yearMonth}`;
                                                     const isEditing = editingCell?.itemId === item.id && editingCell?.yearMonth === yearMonth;
                                                     const isSaving = savingCell === cellKey;
-
-                                                    // Check for monthly override first
                                                     const override = getOverride(item.id, yearMonth);
-
                                                     let baseVal = 0;
                                                     let hasProjection = false;
                                                     if (item.includeInProjection !== false) {
-                                                        if (item.isRecurring) {
-                                                            baseVal = item.projectedAmount ?? item.amount;
-                                                            hasProjection = true;
-                                                        } else if (item.installmentCurrent && item.installmentTotal) {
+                                                        if (item.isRecurring) { baseVal = item.projectedAmount ?? item.amount; hasProjection = true; }
+                                                        else if (item.installmentCurrent && item.installmentTotal) {
                                                             const remaining = item.installmentTotal - item.installmentCurrent;
-                                                            if (idx < remaining) {
-                                                                baseVal = item.projectedAmount ?? item.amount;
-                                                                hasProjection = true;
-                                                            }
+                                                            if (idx < remaining) { baseVal = item.projectedAmount ?? item.amount; hasProjection = true; }
                                                         }
                                                     }
-
-                                                    // Use override if exists, otherwise use base value
                                                     const displayVal = override !== null ? override : baseVal;
                                                     const hasOverride = override !== null && override !== baseVal;
-
                                                     return (
                                                         <td
                                                             key={idx}
-                                                            className={`text-center px-1 py-1 text-xs border-l border-gray-50 cursor-pointer hover:bg-yellow-50 transition-colors ${hasOverride ? 'bg-yellow-50' : ''} ${isSaving ? 'opacity-50' : ''}`}
-                                                            onDoubleClick={() => {
-                                                                if (hasProjection || hasOverride) {
-                                                                    setEditingCell({ itemId: item.id, yearMonth, value: displayVal.toString() });
-                                                                }
-                                                            }}
-                                                            title={hasOverride ? 'Valor modificado (doble-click para editar)' : hasProjection ? 'Doble-click para editar' : ''}
+                                                            colSpan={showPercentages ? 2 : 1}
+                                                            className={`text-right px-1 py-1 text-xs border-l border-border cursor-pointer hover:bg-yellow-50 dark:hover:bg-yellow-900/20 transition-colors ${hasOverride ? 'bg-yellow-50 dark:bg-yellow-900/30' : ''} ${isSaving ? 'opacity-50' : ''}`}
+                                                            onDoubleClick={() => (hasProjection || hasOverride) && setEditingCell({ itemId: item.id, yearMonth, value: displayVal.toString() })}
                                                         >
                                                             {isEditing ? (
                                                                 <input
                                                                     type="number"
                                                                     value={editingCell.value}
-                                                                    onChange={e => setEditingCell({ ...editingCell, value: e.target.value })}
-                                                                    onKeyDown={e => {
-                                                                        if (e.key === 'Enter') {
-                                                                            const newAmount = Number(editingCell.value);
-                                                                            if (!isNaN(newAmount) && newAmount >= 0) {
-                                                                                saveMonthlyOverride(item.id, yearMonth, newAmount);
-                                                                            }
-                                                                            setEditingCell(null);
-                                                                        }
-                                                                        if (e.key === 'Escape') setEditingCell(null);
-                                                                    }}
+                                                                    onChange={e => setEditingCell({ ...editingCell!, value: e.target.value })}
                                                                     onBlur={() => {
-                                                                        const newAmount = Number(editingCell.value);
-                                                                        if (!isNaN(newAmount) && newAmount >= 0) {
-                                                                            saveMonthlyOverride(item.id, yearMonth, newAmount);
-                                                                        }
+                                                                        const newAmount = Number(editingCell!.value);
+                                                                        if (!isNaN(newAmount) && newAmount >= 0) saveMonthlyOverride(item.id, yearMonth, newAmount);
                                                                         setEditingCell(null);
                                                                     }}
-                                                                    className="w-full text-center p-0.5 border border-blue-400 rounded text-xs bg-white"
+                                                                    onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingCell(null); }}
+                                                                    className="w-16 text-right p-0.5 border border-blue-400 dark:border-blue-600 rounded text-xs bg-input text-foreground"
                                                                     autoFocus
-                                                                    onClick={e => e.stopPropagation()}
                                                                 />
                                                             ) : displayVal > 0 ? (
-                                                                <span className={`${hasOverride ? 'text-amber-600 font-bold' : item.isRecurring ? 'text-green-600 font-medium' : 'text-blue-600'}`}>
+                                                                <span className={`${hasOverride ? 'text-amber-600 dark:text-amber-400 font-bold' : item.isRecurring ? 'text-green-600 dark:text-emerald-400 font-medium' : 'text-blue-600 dark:text-blue-400'}`}>
                                                                     {formatMoney(displayVal)}
                                                                 </span>
-                                                            ) : <span className="text-gray-200 text-[10px]">-</span>}
+                                                            ) : <span className="text-gray-200 dark:text-slate-700 text-[10px]">-</span>}
                                                         </td>
                                                     );
                                                 })}
-
-                                                {/* Total Column Empty */}
-                                                <td className="min-w-[100px]"></td>
+                                                <td colSpan={showPercentages ? 2 : 1} className="bg-muted"></td>
                                             </tr>
                                         ))}
-
                                     </Fragment>
                                 );
                             })}
 
-                            {/* Total row */}
-                            <tr className="bg-gradient-to-r from-rose-50 to-red-50 border-t-2 border-rose-200">
-                                <td className="px-3 py-3 font-bold text-rose-800 sticky left-0 bg-gradient-to-r from-rose-50 to-red-50 border-r border-rose-200">
+                            {/* Total Row */}
+                            <tr className="bg-gradient-to-r from-rose-50 to-red-50 dark:from-rose-950/40 dark:to-rose-900/40 border-t-2 border-rose-200 dark:border-rose-800 font-bold">
+                                <td className="px-3 py-3 text-rose-800 dark:text-rose-300 sticky left-0 z-20 bg-white dark:bg-slate-800 border-r border-rose-200 dark:border-rose-800">
                                     💰 Total Mensual
                                 </td>
-                                <td className="px-2 py-3 text-right font-bold text-rose-800 bg-rose-100 border-r border-rose-200 text-xs">
+                                <td className="px-2 py-3 text-right text-rose-800 dark:text-rose-300 bg-rose-50 dark:bg-rose-900/20 border-r border-rose-200 dark:border-rose-800 whitespace-nowrap">
                                     {formatMoney(statementItems.filter(i => i.includeInProjection !== false).reduce((sum, i) => sum + Number(i.amount), 0))}
                                 </td>
+                                {showPercentages && <td className="bg-rose-50 dark:bg-rose-900/20 border-r border-rose-200 dark:border-rose-800"></td>}
                                 {months.map((month, colIdx) => {
                                     const total = getMonthTotal(month);
                                     return (
-                                        <td
-                                            key={colIdx}
-                                            className="px-2 py-3 text-right font-bold text-rose-700 border-l border-rose-100 text-xs"
-                                        >
-                                            {total > 0 ? formatMoney(total) : '-'}
-                                        </td>
+                                        <Fragment key={colIdx}>
+                                            <td className="px-2 py-3 text-right text-rose-700 dark:text-rose-400 border-l border-rose-100 dark:border-rose-900/30">
+                                                {total > 0 ? formatMoney(total) : '-'}
+                                            </td>
+                                            {showPercentages && <td className="border-r border-rose-100 dark:border-rose-900/30"></td>}
+                                        </Fragment>
                                     );
                                 })}
-                                <td className="px-3 py-3 text-right font-bold text-rose-800 bg-rose-100 border-l border-rose-200">
+                                <td className="px-3 py-3 text-right text-rose-800 dark:text-rose-300 bg-rose-50 dark:bg-rose-900/20 border-l border-rose-200 dark:border-rose-800 whitespace-nowrap">
                                     {formatMoney(projections.reduce((sum, p) => sum + p.amount, 0))}
                                 </td>
+                                {showPercentages && <td className="bg-rose-50 dark:bg-rose-900/20 border-l border-rose-200 dark:border-rose-800"></td>}
                             </tr>
                         </tbody>
                     </table>
                 </div>
-            </div >
-        </div >
+            </div>
+        </div>
     );
 }
+

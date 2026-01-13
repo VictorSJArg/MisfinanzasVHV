@@ -1,0 +1,152 @@
+{
+    "projectName": "Mis Finanzas VHV",
+    "description": "Personal finance management application to track income, expenses, budgets, and credit card transactions",
+    "techStack": {
+        "frontend": {
+            "framework": "Next.js 16.1.1",
+            "language": "TypeScript",
+            "ui": "React 19.2.3",
+            "styling": "Tailwind CSS",
+            "charts": "Recharts",
+            "icons": "lucide-react",
+            "theme": "next-themes (dark mode support)"
+        },
+        "backend": {
+            "framework": "Next.js API Routes",
+            "orm": "Prisma 6.19.1",
+            "database": "PostgreSQL (with SQLite for dev)",
+            "dateUtils": "date-fns"
+        },
+        "additional": {
+            "ocr": "tesseract.js (for scanning receipts/documents)",
+            "export": "xlsx (Excel export functionality)"
+        }
+    },
+    "features": {
+        "core": [
+            "Income and expense tracking by category",
+            "Multi-account management (cash, bank, wallet, credit)",
+            "Monthly budget planning and monitoring",
+            "Credit card statement management",
+            "Transaction status tracking (paid, pending, cancelled)",
+            "Dark mode support"
+        ],
+        "views": [
+            {
+                "route": "/flow",
+                "name": "Flow Grid",
+                "description": "Main financial flow view showing income/expenses in a grid format with multiple time periods (weeks/months)",
+                "features": [
+                    "Expandable categories with sub-items",
+                    "Inline editing of transactions",
+                    "Period comparison with variation indicators",
+                    "Transaction detail modal",
+                    "Bulk operations modal",
+                    "Category management (add/delete)",
+                    "Customizable number of periods to display",
+                    "Sort by different columns"
+                ]
+            },
+            {
+                "route": "/dashboard",
+                "name": "Dashboard",
+                "description": "Overview of financial health with charts and summaries",
+                "features": [
+                    "Monthly income/expense/balance summary",
+                    "Execution vs. pending vs. remaining breakdown",
+                    "Category expense chart with historical data",
+                    "Income line visualization",
+                    "Month navigation",
+                    "Category breakdown with credit card indicator"
+                ]
+            },
+            {
+                "route": "/tarjetas",
+                "name": "Credit Cards",
+                "description": "Credit card management and projections",
+                "features": [
+                    "Credit card statement tracking",
+                    "Item categorization (purchase, recurring, payment, fee, tax)",
+                    "Installment management",
+                    "Recurring expense identification",
+                    "Projection grid for future months",
+                    "Monthly overrides for projected amounts",
+                    "OCR scanning for credit card statements",
+                    "Email import for bank notifications",
+                    "Excel export functionality"
+                ]
+            }
+        ],
+        "components": {
+            "TransactionForm": "Add/edit income and expense transactions",
+            "TransactionDetail": "View and edit transaction details in modal",
+            "BulkOperationsModal": "Perform bulk updates on multiple transactions",
+            "CategoryExpenseChart": "Interactive chart with hover effects for category expenses",
+            "ExportButton": "Export data to Excel format",
+            "EmailImportModal": "Import transactions from bank email notifications",
+            "OCRScanner": "Scan and extract data from images/documents",
+            "ThemeToggle": "Switch between light and dark mode",
+            "ProjectionGrid": "Display and manage credit card projections"
+        }
+    },
+    "dataModels": {
+        "User": "User account with currency preference",
+        "Account": "Financial accounts (cash, bank, wallet, credit)",
+        "Category": "Income/expense categories with hierarchy support",
+        "Transaction": "Individual financial transactions",
+        "Budget": "Budget allocations by category and period",
+        "CreditCard": "Credit card information",
+        "CreditCardStatement": "Monthly credit card statements",
+        "CreditCardItem": "Individual charges on credit card statements",
+        "ProjectionStatus": "Status tracking for projected expenses",
+        "ProjectionMonthlyOverride": "Manual overrides for monthly projections"
+    },
+    "keyUserFlows": [
+        "Add a new income/expense transaction via inline editing in FlowGrid",
+        "View transaction details and update status (paid/pending/cancelled)",
+        "Navigate between months to view historical data",
+        "Expand categories to see transaction breakdown",
+        "Manage credit card statements and categorize expenses",
+        "Project future credit card expenses with installments",
+        "Export financial data to Excel",
+        "Import transactions from bank email notifications",
+        "Toggle between light and dark themes"
+    ],
+    "apiEndpoints": [
+        {
+            "path": "/api/flow",
+            "method": "GET",
+            "description": "Fetch flow grid data with income/expense by category and period"
+        },
+        {
+            "path": "/api/dashboard",
+            "method": "GET",
+            "description": "Fetch dashboard summary with charts and category breakdown"
+        },
+        {
+            "path": "/api/transactions",
+            "method": "GET, POST, PUT, DELETE",
+            "description": "CRUD operations for transactions"
+        },
+        {
+            "path": "/api/categories",
+            "method": "GET, POST, DELETE",
+            "description": "Manage income and expense categories"
+        },
+        {
+            "path": "/api/cards",
+            "method": "GET",
+            "description": "Fetch credit card data and projections"
+        }
+    ],
+    "testingPriorities": [
+        "Transaction creation and editing in FlowGrid",
+        "Category expansion and navigation",
+        "Month navigation and data refresh",
+        "Dashboard chart rendering and data accuracy",
+        "Credit card projection calculations",
+        "Dark mode toggle functionality",
+        "Excel export functionality",
+        "Transaction status updates"
+    ]
+}

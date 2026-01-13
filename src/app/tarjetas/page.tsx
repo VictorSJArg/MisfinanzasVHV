@@ -5,6 +5,7 @@ import { format, addMonths, endOfMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 // Dynamic import for OCR (client-side only)
 const OCRScanner = dynamic(() => import('@/components/OCRScanner'), { ssr: false });
@@ -666,8 +667,8 @@ export default function CreditCardsPage() {
     if (loading) {
         return (
             <div className="p-6 animate-pulse">
-                <div className="h-8 bg-gray-200 rounded w-1/3 mb-4"></div>
-                <div className="h-64 bg-gray-200 rounded"></div>
+                <div className="h-8 bg-gray-200 dark:bg-slate-700 rounded w-1/3 mb-4"></div>
+                <div className="h-64 bg-gray-200 dark:bg-slate-700 rounded"></div>
             </div>
         );
     }
@@ -679,16 +680,16 @@ export default function CreditCardsPage() {
                 <div className="flex items-center gap-4">
                     <Link
                         href="/flow"
-                        className="text-sm text-blue-600 hover:text-blue-700 font-medium hover:underline flex items-center gap-1"
+                        className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium hover:underline flex items-center gap-1"
                     >
                         ← Volver al Flujo
                     </Link>
-                    <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                    <h1 className="text-2xl font-bold text-gray-800 dark:text-slate-100 flex items-center gap-2">
                         💳 Tarjetas de Crédito
                     </h1>
                 </div>
                 <div className="flex gap-2">
-
+                    <ThemeToggle />
                     <ExportButton />
                     <button
                         onClick={() => setShowAddCard(true)}
@@ -707,34 +708,34 @@ export default function CreditCardsPage() {
                         onClick={() => setSelectedCard(card)}
                         className={`min-w-[200px] p-4 rounded-xl cursor-pointer transition-all ${selectedCard?.id === card.id
                             ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg scale-105'
-                            : 'bg-white border border-gray-200 hover:border-indigo-300 hover:shadow'
+                            : 'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500 hover:shadow'
                             }`}
                     >
                         <div className="flex justify-between items-start">
                             <div>
-                                <p className={`text-sm ${selectedCard?.id === card.id ? 'text-indigo-100' : 'text-gray-500'}`}>
+                                <p className={`text-sm ${selectedCard?.id === card.id ? 'text-indigo-100' : 'text-gray-500 dark:text-slate-400'}`}>
                                     {card.bank}
                                 </p>
-                                <p className="font-bold">{card.name}</p>
+                                <p className={`font-bold ${selectedCard?.id !== card.id ? 'dark:text-slate-100' : ''}`}>{card.name}</p>
                                 {card.lastFour && (
-                                    <p className={`text-sm ${selectedCard?.id === card.id ? 'text-indigo-200' : 'text-gray-400'}`}>
+                                    <p className={`text-sm ${selectedCard?.id === card.id ? 'text-indigo-200' : 'text-gray-400 dark:text-slate-500'}`}>
                                         •••• {card.lastFour}
                                     </p>
                                 )}
                             </div>
                             <button
                                 onClick={(e) => { e.stopPropagation(); handleDeleteCard(card.id); }}
-                                className={`p-1 rounded hover:bg-white/20 ${selectedCard?.id === card.id ? 'text-white' : 'text-gray-400'}`}
+                                className={`p-1 rounded hover:bg-white/20 ${selectedCard?.id === card.id ? 'text-white' : 'text-gray-400 dark:text-slate-500'}`}
                             >
                                 🗑️
                             </button>
                         </div>
                         {card.statements[0] && (
-                            <div className={`mt-3 pt-3 border-t ${selectedCard?.id === card.id ? 'border-white/20' : 'border-gray-100'}`}>
-                                <p className={`text-xs ${selectedCard?.id === card.id ? 'text-indigo-200' : 'text-gray-500'}`}>
+                            <div className={`mt-3 pt-3 border-t ${selectedCard?.id === card.id ? 'border-white/20' : 'border-gray-100 dark:border-slate-700'}`}>
+                                <p className={`text-xs ${selectedCard?.id === card.id ? 'text-indigo-200' : 'text-gray-500 dark:text-slate-400'}`}>
                                     Saldo actual
                                 </p>
-                                <p className="font-bold text-lg">
+                                <p className={`font-bold text-lg ${selectedCard?.id !== card.id ? 'dark:text-slate-100' : ''}`}>
                                     {formatMoney(Number(card.statements[0].totalAmount))}
                                 </p>
                             </div>
@@ -743,7 +744,7 @@ export default function CreditCardsPage() {
                 ))}
 
                 {cards.length === 0 && (
-                    <div className="text-center text-gray-500 py-8 w-full">
+                    <div className="text-center text-gray-500 dark:text-slate-400 py-8 w-full">
                         No hay tarjetas registradas. Agrega una para comenzar.
                     </div>
                 )}
@@ -753,14 +754,15 @@ export default function CreditCardsPage() {
             {selectedCard && (
                 <div className="space-y-6">
                     {/* Current Statement - Full Width */}
-                    <div className="bg-white rounded-xl border border-gray-200 p-6">
-                        <div className="flex justify-between items-center mb-4">
-                            <div className="flex items-center gap-2">
-                                <h2 className="text-lg font-bold text-gray-800">📄 Resumen:</h2>
-                                <select
+                    <div className="bg-card rounded-xl border border-border p-6 shadow-sm overflow-hidden text-card-foreground">
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+                            <div>
+                                <h2 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent flex items-center gap-2">
+                                    📄 Resumen: <span className="text-foreground capitalize">{currentStatement ? format(new Date(currentStatement.dueDate), 'MMMM yyyy', { locale: es }) : 'Seleccione'}</span>
+                                </h2>        <select
                                     value={currentStatement?.id || ''}
                                     onChange={(e) => setSelectedStatementId(e.target.value)}
-                                    className="text-sm font-medium border-gray-200 rounded-md focus:ring-indigo-500 focus:border-indigo-500 bg-gray-50 py-1"
+                                    className="text-sm font-medium border-border rounded-md focus:ring-indigo-500 focus:border-indigo-500 bg-input text-foreground py-1"
                                 >
                                     {selectedCard.statements.map(stmt => (
                                         <option key={stmt.id} value={stmt.id}>
@@ -791,35 +793,35 @@ export default function CreditCardsPage() {
                         {currentStatement ? (
                             <div>
                                 <div className="grid grid-cols-2 gap-4 mb-4">
-                                    <div className="bg-gray-50 p-3 rounded-lg">
-                                        <p className="text-xs text-gray-500">Vencimiento</p>
-                                        <p className="font-semibold text-gray-800">
+                                    <div className="bg-muted p-3 rounded-lg">
+                                        <p className="text-xs text-muted-foreground">Vencimiento</p>
+                                        <p className="font-semibold text-foreground">
                                             {format(new Date(currentStatement.dueDate), 'dd/MM/yyyy')}
                                         </p>
                                     </div>
-                                    <div className="bg-gradient-to-br from-rose-50 to-red-50 p-3 rounded-lg">
-                                        <p className="text-xs text-rose-600">Saldo Total</p>
-                                        <p className="font-bold text-rose-700 text-lg">
+                                    <div className="bg-gradient-to-br from-rose-50 to-red-50 dark:from-rose-900/30 dark:to-red-900/30 p-3 rounded-lg">
+                                        <p className="text-xs text-rose-600 dark:text-rose-400">Saldo Total</p>
+                                        <p className="font-bold text-rose-700 dark:text-rose-300 text-lg">
                                             {formatMoney(Number(currentStatement.totalAmount))}
                                         </p>
                                     </div>
                                 </div>
 
                                 {/* Toolbar */}
-                                <div className="flex flex-wrap gap-3 mb-4 items-center bg-gray-50/50 p-2 rounded-lg border border-gray-100">
+                                <div className="flex flex-wrap gap-3 mb-4 items-center bg-muted/50 p-2 rounded-lg border border-border">
                                     <div className="flex-1 min-w-[200px]">
                                         <input
                                             type="text"
                                             placeholder="🔍 Buscar concepto..."
                                             value={searchTerm}
                                             onChange={e => setSearchTerm(e.target.value)}
-                                            className="w-full text-sm border-gray-200 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                                            className="w-full text-sm border-border rounded-md focus:ring-indigo-500 focus:border-indigo-500 bg-input text-foreground placeholder-muted-foreground"
                                         />
                                     </div>
                                     <select
                                         value={filterCategory}
                                         onChange={e => setFilterCategory(e.target.value)}
-                                        className="text-sm border-gray-200 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                                        className="text-sm border-border rounded-md focus:ring-indigo-500 focus:border-indigo-500 bg-input text-foreground"
                                     >
                                         <option value="ALL">Todas las Categorías</option>
                                         {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -827,7 +829,7 @@ export default function CreditCardsPage() {
                                     <select
                                         value={filterType}
                                         onChange={e => setFilterType(e.target.value)}
-                                        className="text-sm border-gray-200 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                                        className="text-sm border-border rounded-md focus:ring-indigo-500 focus:border-indigo-500 bg-input text-foreground"
                                     >
                                         <option value="ALL">Todos los Tipos</option>
                                         <option value="PURCHASE">Compras</option>
@@ -849,22 +851,22 @@ export default function CreditCardsPage() {
                                 <div className="overflow-x-auto">
                                     <div className="max-h-[500px] overflow-y-auto">
                                         <table className="w-full text-sm min-w-[900px]">
-                                            <thead className="bg-gray-50 sticky top-0 z-10">
+                                            <thead className="bg-muted/50 sticky top-0 z-10">
                                                 <tr>
-                                                    <th className="text-left px-3 py-2 text-gray-600 font-semibold" style={{ width: '35%' }}>Concepto</th>
-                                                    <th className="text-center px-2 py-2 text-gray-600 font-semibold w-24">Cuotas</th>
-                                                    <th className="text-left px-2 py-2 font-medium text-gray-400 font-normal">Categoría</th>
-                                                    <th className="text-left px-2 py-2 font-medium text-gray-400 font-normal">Tipo</th>
-                                                    <th className="text-right px-2 py-2 font-medium text-gray-400 font-normal">Monto</th>
-                                                    <th className="text-center px-2 py-2 font-medium text-gray-400 font-normal w-24">Obs</th>
-                                                    <th className="text-right px-2 py-2 font-medium text-gray-400 font-normal" title="Monto Proyectado">Proy.</th>
-                                                    <th className="text-center px-2 py-2 font-medium text-gray-400 font-normal" title="Incluir en Proyección">Inc.</th>
-                                                    <th className="text-center px-2 py-2 font-medium text-gray-400 font-normal">Acciones</th>
+                                                    <th className="text-left px-3 py-2 text-muted-foreground font-semibold" style={{ width: '35%' }}>Concepto</th>
+                                                    <th className="text-center px-2 py-2 text-muted-foreground font-semibold w-24">Cuotas</th>
+                                                    <th className="text-left px-2 py-2 font-medium text-muted-foreground font-normal">Categoría</th>
+                                                    <th className="text-left px-2 py-2 font-medium text-muted-foreground font-normal">Tipo</th>
+                                                    <th className="text-right px-2 py-2 font-medium text-muted-foreground font-normal">Monto</th>
+                                                    <th className="text-center px-2 py-2 font-medium text-muted-foreground font-normal w-24">Obs</th>
+                                                    <th className="text-right px-2 py-2 font-medium text-muted-foreground font-normal" title="Monto Proyectado">Proy.</th>
+                                                    <th className="text-center px-2 py-2 font-medium text-muted-foreground font-normal" title="Incluir en Proyección">Inc.</th>
+                                                    <th className="text-center px-2 py-2 font-medium text-muted-foreground font-normal">Acciones</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 {filteredItems.map(item => (
-                                                    <tr key={`${item.id}-${item.category}-${item.itemType}-${item.isRecurring}-${item.includeInProjection}-${item.projectedAmount}`} className="border-b border-gray-100 hover:bg-gray-50 group">
+                                                    <tr key={`${item.id}-${item.category}-${item.itemType}-${item.isRecurring}-${item.includeInProjection}-${item.projectedAmount}`} className="border-b border-border hover:bg-muted/50 group">
                                                         <td className="px-2 py-2">
                                                             <input
                                                                 type="text"
@@ -875,9 +877,9 @@ export default function CreditCardsPage() {
                                                                         handleUpdateItem(item.id, { description: e.target.value });
                                                                     }
                                                                 }}
-                                                                className="block w-full text-gray-800 bg-transparent border-0 focus:ring-1 focus:ring-indigo-400 rounded px-1 py-0.5 font-medium"
+                                                                className="block w-full text-foreground bg-transparent border-0 focus:ring-1 focus:ring-indigo-400 rounded px-1 py-0.5 font-medium"
                                                             />
-                                                            <span className="text-xs text-gray-400">
+                                                            <span className="text-xs text-gray-400 dark:text-slate-500">
                                                                 {format(new Date(item.date), 'dd/MM/yy')}
                                                             </span>
                                                         </td>
@@ -887,7 +889,7 @@ export default function CreditCardsPage() {
                                                                     <div className="flex items-center gap-0.5">
                                                                         <input
                                                                             type="number"
-                                                                            className="w-6 text-center text-xs font-semibold text-indigo-600 border-0 border-b border-gray-200 focus:ring-0 focus:border-indigo-500 p-0"
+                                                                            className="w-6 text-center text-xs font-semibold text-indigo-600 dark:text-indigo-400 border-0 border-b border-border focus:ring-0 focus:border-indigo-500 p-0 bg-transparent"
                                                                             defaultValue={item.installmentCurrent || 1}
                                                                             onBlur={(e) => {
                                                                                 const val = parseInt(e.target.value);
@@ -896,10 +898,10 @@ export default function CreditCardsPage() {
                                                                                 }
                                                                             }}
                                                                         />
-                                                                        <span className="text-gray-400">/</span>
+                                                                        <span className="text-muted-foreground">/</span>
                                                                         <input
                                                                             type="number"
-                                                                            className="w-6 text-center text-xs font-semibold text-indigo-600 border-0 border-b border-gray-200 focus:ring-0 focus:border-indigo-500 p-0"
+                                                                            className="w-6 text-center text-xs font-semibold text-indigo-600 dark:text-indigo-400 border-0 border-b border-border focus:ring-0 focus:border-indigo-500 p-0 bg-transparent"
                                                                             defaultValue={item.installmentTotal}
                                                                             onBlur={(e) => {
                                                                                 const val = parseInt(e.target.value);
@@ -909,19 +911,19 @@ export default function CreditCardsPage() {
                                                                             }}
                                                                         />
                                                                     </div>
-                                                                    <span className="text-[10px] text-gray-400">
+                                                                    <span className="text-[10px] text-muted-foreground">
                                                                         Faltan {(item.installmentTotal - (item.installmentCurrent || 0))}
                                                                     </span>
                                                                 </div>
                                                             ) : (
-                                                                <span className="text-gray-300">-</span>
+                                                                <span className="text-gray-300 dark:text-slate-600">-</span>
                                                             )}
                                                         </td>
                                                         <td className="px-2 py-2">
                                                             <select
                                                                 value={item.category || 'OTROS'}
                                                                 onChange={(e) => handleUpdateItem(item.id, { category: e.target.value })}
-                                                                className="w-full text-xs border rounded px-1 py-1 bg-white cursor-pointer"
+                                                                className="w-full text-xs border border-border rounded px-1 py-1 bg-input text-foreground cursor-pointer"
                                                             >
                                                                 <option value="COMBUSTIBLE">⛽ Combustible</option>
                                                                 <option value="ALIMENTOS">🛒 Alimentos</option>
@@ -941,7 +943,7 @@ export default function CreditCardsPage() {
                                                             <select
                                                                 value={item.itemType}
                                                                 onChange={(e) => handleUpdateItem(item.id, { itemType: e.target.value })}
-                                                                className="w-full text-xs border rounded px-1 py-1 bg-white cursor-pointer"
+                                                                className="w-full text-xs border border-border rounded px-1 py-1 bg-input text-foreground cursor-pointer"
                                                             >
                                                                 <option value="PURCHASE">🛒 Compra</option>
                                                                 <option value="RECURRING">🔄 Recurrente</option>
@@ -961,7 +963,7 @@ export default function CreditCardsPage() {
                                                                         handleUpdateItem(item.id, { amount: newAmount });
                                                                     }
                                                                 }}
-                                                                className="w-full text-right font-medium text-gray-800 bg-transparent border-0 focus:ring-1 focus:ring-indigo-400 rounded px-1 py-0.5"
+                                                                className="w-full text-right font-medium text-foreground bg-transparent border-0 focus:ring-1 focus:ring-indigo-400 rounded px-1 py-0.5"
                                                             />
                                                         </td>
                                                         <td className="px-2 py-2 text-center">
@@ -975,7 +977,7 @@ export default function CreditCardsPage() {
                                                                     }
                                                                 }}
                                                                 placeholder="..."
-                                                                className="w-full text-center text-xs text-gray-600 bg-transparent border-0 focus:ring-1 focus:ring-indigo-400 rounded px-1 py-0.5 italic placeholder:text-gray-300"
+                                                                className="w-full text-center text-xs text-muted-foreground bg-transparent border-0 focus:ring-1 focus:ring-indigo-400 rounded px-1 py-0.5 italic placeholder:text-muted-foreground/50"
                                                             />
                                                         </td>
                                                         <td className="px-2 py-2 text-right">
@@ -988,7 +990,7 @@ export default function CreditCardsPage() {
                                                                     handleUpdateItem(item.id, { projectedAmount: val });
                                                                 }}
                                                                 title="Monto para proyecciones futuras (dejar vacío para usar el monto real)"
-                                                                className={`w-full text-right bg-transparent border-0 focus:ring-1 focus:ring-indigo-400 rounded px-1 py-0.5 text-xs ${item.projectedAmount ? 'font-bold text-indigo-600' : 'text-gray-400'}`}
+                                                                className={`w-full text-right bg-transparent border-0 focus:ring-1 focus:ring-indigo-400 rounded px-1 py-0.5 text-xs ${item.projectedAmount ? 'font-bold text-indigo-600 dark:text-indigo-400' : 'text-muted-foreground'}`}
                                                             />
                                                         </td>
                                                         <td className="px-2 py-2 text-center">
@@ -997,7 +999,7 @@ export default function CreditCardsPage() {
                                                                 title={(item.includeInProjection ?? true) ? 'Excluir de proyección' : 'Incluir en proyección'}
                                                                 className={`text-xs px-2 py-1 rounded transition-colors cursor-pointer ${(item.includeInProjection ?? true)
                                                                     ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
-                                                                    : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                                                                    : 'bg-muted text-muted-foreground hover:bg-accent'
                                                                     }`}
                                                             >
                                                                 {(item.includeInProjection ?? true) ? '✓' : '✗'}
@@ -1008,7 +1010,7 @@ export default function CreditCardsPage() {
                                                                 <button
                                                                     onClick={() => handleUpdateItem(item.id, { isRecurring: !item.isRecurring })}
                                                                     title={item.isRecurring ? 'Quitar recurrente' : 'Marcar como recurrente'}
-                                                                    className={`text-xs px-1.5 py-0.5 rounded cursor-pointer transition-colors ${item.isRecurring ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                                                                    className={`text-xs px-1.5 py-0.5 rounded cursor-pointer transition-colors ${item.isRecurring ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-muted text-muted-foreground hover:bg-accent'}`}
                                                                 >
                                                                     🔄
                                                                 </button>
@@ -1029,13 +1031,13 @@ export default function CreditCardsPage() {
                                 </div>
 
                                 {/* Totals Footer */}
-                                <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-2 gap-4">
+                                <div className="mt-4 pt-4 border-t border-gray-100 dark:border-slate-700 grid grid-cols-2 gap-4">
                                     <div className="flex justify-end items-center gap-2 text-sm">
-                                        <span className="text-gray-500">Total Items:</span>
-                                        <span className="font-bold text-gray-800">{formatMoney(sumOfItems)}</span>
+                                        <span className="text-muted-foreground">Total Items:</span>
+                                        <span className="font-bold text-foreground">{formatMoney(sumOfItems)}</span>
                                     </div>
                                     <div className="flex justify-end items-center gap-2 text-sm">
-                                        <span className="text-gray-500">Diferencia (Saldo - Items):</span>
+                                        <span className="text-muted-foreground">Diferencia (Saldo - Items):</span>
                                         <span className={`font-bold px-2 py-0.5 rounded ${Math.abs(difference) < 1 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                                             {Math.abs(difference) < 1 ? 'Sin Saldo' : formatMoney(difference)}
                                         </span>
@@ -1044,7 +1046,7 @@ export default function CreditCardsPage() {
 
                             </div>
                         ) : (
-                            <div className="text-center py-8 text-gray-500">
+                            <div className="text-center py-8 text-gray-500 dark:text-slate-400">
                                 No hay resúmenes cargados
                             </div>
                         )}
@@ -1055,8 +1057,8 @@ export default function CreditCardsPage() {
             {/* Projections - Full Width Below */}
             {/* Projections - Full Width Below */}
             {selectedCard && (
-                <div className="mt-6 bg-white rounded-xl border border-gray-200 p-6">
-                    <h2 className="text-lg font-bold text-gray-800 mb-4">📊 Proyección de Gastos TC - {selectedCard.name}</h2>
+                <div className="mt-6 bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-700 p-6">
+                    <h2 className="text-lg font-bold text-gray-800 dark:text-slate-100 mb-4">📊 Proyección de Gastos TC - {selectedCard.name}</h2>
                     {(() => {
                         // Logic to merge Previous Projections into Current View
                         // 1. Find previous statement
@@ -1137,8 +1139,8 @@ export default function CreditCardsPage() {
 
             {/* General Projection Grid - Full Width when no card selected */}
             {!selectedCard && cards.length > 0 && (
-                <div className="mt-6 bg-white rounded-xl border border-gray-200 p-6">
-                    <h2 className="text-lg font-bold text-gray-800 mb-4">📊 Proyección General de Gastos TC</h2>
+                <div className="mt-6 bg-card rounded-xl border border-border p-6 text-card-foreground">
+                    <h2 className="text-lg font-bold text-foreground mb-4">📊 Proyección General de Gastos TC</h2>
                     <ProjectionGrid
                         projections={displayedProjections}
                         formatMoney={formatMoney}
@@ -1150,45 +1152,45 @@ export default function CreditCardsPage() {
             {/* Add Card Modal */}
             {showAddCard && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-xl p-6 w-full max-w-md">
-                        <h3 className="text-lg font-bold mb-4">Nueva Tarjeta</h3>
+                    <div className="bg-white dark:bg-slate-900 rounded-xl p-6 w-full max-w-md">
+                        <h3 className="text-lg font-bold mb-4 dark:text-slate-100">Nueva Tarjeta</h3>
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Nombre</label>
                                 <input
                                     type="text"
                                     value={newCardName}
                                     onChange={e => setNewCardName(e.target.value)}
                                     placeholder="ej: VISA Oro"
-                                    className="w-full border rounded-lg px-3 py-2"
+                                    className="w-full border dark:border-slate-600 rounded-lg px-3 py-2 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-400"
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Banco</label>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Banco</label>
                                 <input
                                     type="text"
                                     value={newCardBank}
                                     onChange={e => setNewCardBank(e.target.value)}
                                     placeholder="ej: Banco San Juan"
-                                    className="w-full border rounded-lg px-3 py-2"
+                                    className="w-full border dark:border-slate-600 rounded-lg px-3 py-2 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-400"
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Últimos 4 dígitos (opcional)</label>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Últimos 4 dígitos (opcional)</label>
                                 <input
                                     type="text"
                                     value={newCardLastFour}
                                     onChange={e => setNewCardLastFour(e.target.value)}
                                     maxLength={4}
                                     placeholder="ej: 5100"
-                                    className="w-full border rounded-lg px-3 py-2"
+                                    className="w-full border dark:border-slate-600 rounded-lg px-3 py-2 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-400"
                                 />
                             </div>
                         </div>
                         <div className="flex gap-3 mt-6">
                             <button
                                 onClick={() => setShowAddCard(false)}
-                                className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50"
+                                className="flex-1 px-4 py-2 border dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800 dark:text-slate-100"
                             >
                                 Cancelar
                             </button>
@@ -1206,46 +1208,46 @@ export default function CreditCardsPage() {
             {/* Add Item Modal */}
             {showAddItem && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-xl p-6 w-full max-w-md">
-                        <h3 className="text-lg font-bold mb-4">Nuevo Concepto</h3>
+                    <div className="bg-white dark:bg-slate-900 rounded-xl p-6 w-full max-w-md">
+                        <h3 className="text-lg font-bold mb-4 dark:text-slate-100">Nuevo Concepto</h3>
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Descripción</label>
                                 <input
                                     type="text"
                                     value={newItemDesc}
                                     onChange={e => setNewItemDesc(e.target.value)}
                                     placeholder="ej: Pago Netflix"
-                                    className="w-full border rounded-lg px-3 py-2"
+                                    className="w-full border border-border rounded-lg px-3 py-2 bg-input text-foreground"
                                 />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Monto</label>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Monto</label>
                                     <input
                                         type="number"
                                         value={newItemAmount}
                                         onChange={e => setNewItemAmount(e.target.value)}
                                         placeholder="0.00"
-                                        className="w-full border rounded-lg px-3 py-2"
+                                        className="w-full border border-border rounded-lg px-3 py-2 bg-input text-foreground"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Fecha</label>
                                     <input
                                         type="date"
                                         value={newItemDate}
                                         onChange={e => setNewItemDate(e.target.value)}
-                                        className="w-full border rounded-lg px-3 py-2"
+                                        className="w-full border border-border rounded-lg px-3 py-2 bg-input text-foreground"
                                     />
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Categoría</label>
                                 <select
                                     value={newItemCategory}
                                     onChange={e => setNewItemCategory(e.target.value)}
-                                    className="w-full border rounded-lg px-3 py-2"
+                                    className="w-full border border-border rounded-lg px-3 py-2 bg-input text-foreground"
                                 >
                                     {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                 </select>
@@ -1254,13 +1256,13 @@ export default function CreditCardsPage() {
                         <div className="flex gap-3 mt-6">
                             <button
                                 onClick={() => setShowAddItem(false)}
-                                className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50"
+                                className="flex-1 px-4 py-2 border border-border rounded-lg hover:bg-muted text-foreground"
                             >
                                 Cancelar
                             </button>
                             <button
                                 onClick={handleAddItem}
-                                className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                                className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-blue-700"
                             >
                                 Agregar
                             </button>
@@ -1272,12 +1274,12 @@ export default function CreditCardsPage() {
             {/* Add Statement Modal */}
             {showAddStatement && selectedCard && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-                        <h3 className="text-lg font-bold mb-4">Cargar Resumen - {selectedCard.name}</h3>
+                    <div className="bg-card rounded-xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-border text-card-foreground">
+                        <h3 className="text-lg font-bold mb-4 dark:text-slate-100">Cargar Resumen - {selectedCard.name}</h3>
 
-                        <div className="mb-6 p-4 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border border-indigo-100 space-y-4">
+                        <div className="mb-6 p-4 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/30 dark:to-purple-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800 space-y-4">
                             <div>
-                                <h4 className="font-medium text-indigo-800 mb-2">📷 Escanear Resumen Completo (OCR)</h4>
+                                <h4 className="font-medium text-indigo-800 dark:text-indigo-300 mb-2">📷 Escanear Resumen Completo (OCR)</h4>
                                 <OCRScanner
                                     onItemsExtracted={(items) => {
                                         setStatementItems(items.map(i => ({
@@ -1296,8 +1298,8 @@ export default function CreditCardsPage() {
                                 />
                             </div>
 
-                            <div className="border-t border-indigo-200 pt-4">
-                                <h4 className="font-medium text-indigo-800 mb-2">📧 Importar Gasto Individual (Email/Foto)</h4>
+                            <div className="border-t border-indigo-200 dark:border-indigo-700 pt-4">
+                                <h4 className="font-medium text-indigo-800 dark:text-indigo-300 mb-2">📧 Importar Gasto Individual (Email/Foto)</h4>
                                 <p className="text-xs text-indigo-600 mb-3">
                                     Si tienes una notificación de compra por email o foto, impórtala aquí. Se agregará directamente al resumen correspondiente.
                                 </p>
@@ -1316,41 +1318,41 @@ export default function CreditCardsPage() {
 
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Cierre</label>
+                                <label className="block text-sm font-medium text-foreground mb-1">Fecha Cierre</label>
                                 <input
                                     type="date"
                                     value={statementClosingDate}
                                     onChange={e => setStatementClosingDate(e.target.value)}
-                                    className="w-full border rounded-lg px-3 py-2"
+                                    className="w-full border border-border rounded-lg px-3 py-2 bg-input text-foreground"
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Vencimiento</label>
+                                <label className="block text-sm font-medium text-foreground mb-1">Fecha Vencimiento</label>
                                 <input
                                     type="date"
                                     value={statementDueDate}
                                     onChange={e => setStatementDueDate(e.target.value)}
-                                    className="w-full border rounded-lg px-3 py-2"
+                                    className="w-full border border-border rounded-lg px-3 py-2 bg-input text-foreground"
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Saldo Total</label>
+                                <label className="block text-sm font-medium text-foreground mb-1">Saldo Total</label>
                                 <input
                                     type="number"
                                     value={statementTotal}
                                     onChange={e => setStatementTotal(e.target.value)}
                                     placeholder="1149514.56"
-                                    className="w-full border rounded-lg px-3 py-2"
+                                    className="w-full border border-border rounded-lg px-3 py-2 bg-input text-foreground"
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Pago Mínimo</label>
+                                <label className="block text-sm font-medium text-foreground mb-1">Pago Mínimo</label>
                                 <input
                                     type="number"
                                     value={statementMinPayment}
                                     onChange={e => setStatementMinPayment(e.target.value)}
                                     placeholder="147474"
-                                    className="w-full border rounded-lg px-3 py-2"
+                                    className="w-full border border-border rounded-lg px-3 py-2 bg-input text-foreground"
                                 />
                             </div>
                         </div>
@@ -1363,12 +1365,12 @@ export default function CreditCardsPage() {
 
                         <div className="border rounded-lg overflow-hidden mb-4">
                             <table className="w-full text-sm">
-                                <thead className="bg-gray-50">
+                                <thead className="bg-muted">
                                     <tr>
-                                        <th className="text-left px-3 py-2 font-medium text-gray-600">Fecha</th>
-                                        <th className="text-left px-3 py-2 font-medium text-gray-600">Descripción</th>
-                                        <th className="text-right px-3 py-2 font-medium text-gray-600">Monto $</th>
-                                        <th className="text-right px-3 py-2 font-medium text-gray-600">Monto USD</th>
+                                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Fecha</th>
+                                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Descripción</th>
+                                        <th className="text-right px-3 py-2 font-medium text-muted-foreground">Monto $</th>
+                                        <th className="text-right px-3 py-2 font-medium text-muted-foreground">Monto USD</th>
                                         <th className="w-10"></th>
                                     </tr>
                                 </thead>
@@ -1389,7 +1391,7 @@ export default function CreditCardsPage() {
                                                     value={item.description}
                                                     onChange={e => updateStatementRow(idx, 'description', e.target.value)}
                                                     placeholder="ej: NETFLIX o ITALA SA C.04/06"
-                                                    className="w-full border rounded px-2 py-1 text-sm"
+                                                    className="w-full border border-border rounded px-2 py-1 text-sm bg-input text-foreground"
                                                 />
                                             </td>
                                             <td className="px-3 py-2">
