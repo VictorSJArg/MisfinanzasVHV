@@ -511,6 +511,27 @@ export default function CreditCardsPage() {
         }
     };
 
+    const handleUpdateStatement = async (statementId: string, updates: Record<string, any>) => {
+        try {
+            const res = await fetch('/api/credit-cards/statements', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: statementId, ...updates })
+            });
+
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || 'Update failed');
+            }
+
+            fetchCards();
+            fetchProjections();
+        } catch (error) {
+            console.error(error);
+            alert('Error al actualizar el resumen');
+        }
+    };
+
     const addStatementRow = () => {
         setStatementItems([...statementItems, { date: '', description: '', amount: '', amountUSD: '' }]);
     };
@@ -793,17 +814,39 @@ export default function CreditCardsPage() {
                         {currentStatement ? (
                             <div>
                                 <div className="grid grid-cols-2 gap-4 mb-4">
-                                    <div className="bg-muted p-3 rounded-lg">
-                                        <p className="text-xs text-muted-foreground">Vencimiento</p>
-                                        <p className="font-semibold text-foreground">
-                                            {format(new Date(currentStatement.dueDate), 'dd/MM/yyyy')}
-                                        </p>
+                                    <div className="bg-muted p-3 rounded-lg flex flex-col justify-center">
+                                        <p className="text-xs text-muted-foreground mb-1">Vencimiento</p>
+                                        <input
+                                            type="date"
+                                            key={`date-${currentStatement.id}-${currentStatement.dueDate}`}
+                                            defaultValue={format(new Date(currentStatement.dueDate), 'yyyy-MM-dd')}
+                                            onBlur={(e) => {
+                                                const newDate = new Date(e.target.value);
+                                                // Avoid timezone drift by parsing YYYY-MM-DD
+                                                if (e.target.value && e.target.value !== format(new Date(currentStatement.dueDate), 'yyyy-MM-dd')) {
+                                                    handleUpdateStatement(currentStatement.id, { dueDate: e.target.value });
+                                                }
+                                            }}
+                                            className="font-semibold text-foreground bg-transparent border border-transparent hover:border-border focus:border-indigo-500 rounded px-1 py-0.5 outline-none -ml-1 transition-colors cursor-pointer w-full max-w-[150px]"
+                                        />
                                     </div>
-                                    <div className="bg-gradient-to-br from-rose-50 to-red-50 dark:from-rose-900/30 dark:to-red-900/30 p-3 rounded-lg">
-                                        <p className="text-xs text-rose-600 dark:text-rose-400">Saldo Total</p>
-                                        <p className="font-bold text-rose-700 dark:text-rose-300 text-lg">
-                                            {formatMoney(Number(currentStatement.totalAmount))}
-                                        </p>
+                                    <div className="bg-gradient-to-br from-rose-50 to-red-50 dark:from-rose-900/30 dark:to-red-900/30 p-3 rounded-lg flex flex-col justify-center">
+                                        <p className="text-xs text-rose-600 dark:text-rose-400 mb-1">Saldo Total</p>
+                                        <div className="flex items-center">
+                                            <span className="font-bold text-rose-700 dark:text-rose-300 text-lg mr-1">$</span>
+                                            <input
+                                                type="number"
+                                                key={`total-${currentStatement.id}-${currentStatement.totalAmount}`}
+                                                defaultValue={Number(currentStatement.totalAmount)}
+                                                onBlur={(e) => {
+                                                    const val = parseFloat(e.target.value);
+                                                    if (!isNaN(val) && val !== Number(currentStatement.totalAmount)) {
+                                                        handleUpdateStatement(currentStatement.id, { totalAmount: val });
+                                                    }
+                                                }}
+                                                className="font-bold text-rose-700 dark:text-rose-300 text-lg bg-transparent border border-transparent hover:border-rose-300 dark:hover:border-rose-700 focus:border-rose-500 rounded px-1 py-0.5 outline-none -ml-1 transition-colors w-full max-w-[150px]"
+                                            />
+                                        </div>
                                     </div>
                                 </div>
 

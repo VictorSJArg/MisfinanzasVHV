@@ -397,6 +397,72 @@ export default function FlowGrid() {
 
         console.log('Target transaction for update:', existingTx);
 
+        // OPTIMISTIC UI UPDATE
+        const oldAmount = existingTx ? existingTx.amount : 0;
+        const diff = newAmount - oldAmount;
+
+        setData(prevData => {
+            if (!prevData) return prevData;
+            const newData = { ...prevData };
+            const isIncome = row.category.type === 'INCOME';
+            const rows = isIncome ? newData.incomeRows : newData.expenseRows;
+            const rowIndex = rows.findIndex(r => r.category.id === row.category.id);
+            
+            if (rowIndex !== -1) {
+                const newRows = [...rows];
+                const newRow = { ...newRows[rowIndex] };
+                const newCells = [...newRow.cells];
+                
+                const oldColAmount = newCells[columnIndex] || 0;
+                newCells[columnIndex] = oldColAmount + diff;
+                newRow.cells = newCells;
+                newRow.total = newRow.total + diff;
+                newRows[rowIndex] = newRow;
+                
+                if (isIncome) newData.incomeRows = newRows;
+                else newData.expenseRows = newRows;
+                
+                const newSummary = [...newData.summary];
+                if (newSummary[columnIndex]) {
+                    newSummary[columnIndex] = {
+                        ...newSummary[columnIndex],
+                        [isIncome ? 'income' : 'expense']: newSummary[columnIndex][isIncome ? 'income' : 'expense'] + diff,
+                        balance: newSummary[columnIndex].balance + (isIncome ? diff : -diff)
+                    };
+                }
+                newData.summary = newSummary;
+            }
+            return newData;
+        });
+
+        setDetailsCache(prev => {
+            const next = { ...prev };
+            const categoryTxs = [...(next[row.category.id] || [])];
+            
+            if (existingTx && existingTx.id) {
+                const idx = categoryTxs.findIndex(t => t.id === existingTx.id);
+                if (idx >= 0) {
+                    if (newAmount === 0) {
+                        categoryTxs.splice(idx, 1);
+                    } else {
+                        categoryTxs[idx] = { ...categoryTxs[idx], amount: newAmount, description: actualDescription || undefined };
+                    }
+                }
+            } else if (newAmount > 0) {
+                categoryTxs.push({
+                    id: 'temp-' + Date.now(),
+                    amount: newAmount,
+                    date: column.startDate,
+                    type: row.category.type,
+                    description: actualDescription || undefined,
+                    categoryId: row.category.id,
+                    status: 'PENDING'
+                } as any);
+            }
+            next[row.category.id] = categoryTxs;
+            return next;
+        });
+
         try {
             if (existingTx && existingTx.id) {
                 // UPDATE existing transaction
@@ -463,13 +529,6 @@ export default function FlowGrid() {
                 console.log('Save SUCCESS:', result);
             }
 
-            // Invalidar caché
-            setDetailsCache(prev => {
-                const next = { ...prev };
-                delete next[row.category.id];
-                return next;
-            });
-
             // Expandir categoría para ver el item
             setExpandedCategories(prev => {
                 const next = new Set(prev);
@@ -477,11 +536,10 @@ export default function FlowGrid() {
                 return next;
             });
 
-            // Recargar datos
-            console.log('Refreshing data...');
-            await fetchData(true);
-            await fetchCategoryDetails(row.category.id);
-            console.log('=== SAVE COMPLETE ===');
+            // Recargar datos en segundo plano
+            console.log('Refreshing data in background...');
+            fetchData(true).then(() => fetchCategoryDetails(row.category.id));
+            console.log('=== SAVE COMPLETE (Optimistic) ===');
 
         } catch (error) {
             console.error('Save ERROR:', error);
@@ -653,6 +711,7 @@ export default function FlowGrid() {
 
         if (e.key === 'Enter' || e.key === 'Tab') {
             e.preventDefault();
+            setEditingCell(null);
             saveCellValue(row, columnIndex, editingCell.value, editingCell.detailDescription);
         }
     };
@@ -1485,22 +1544,22 @@ export default function FlowGrid() {
                     <table className="w-full border-collapse text-sm">
                         <thead className="bg-muted/50 sticky top-0 z-20">
                             <tr>
-                                <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider sticky left-0 bg-muted/90 z-30 border-r border-border min-w-[200px] backdrop-blur-sm">
+                                <th className="px-4 py-2 text-left text-sm font-bold text-foreground uppercase tracking-wider sticky left-0 bg-muted/90 z-30 border-r border-border min-w-[200px] backdrop-blur-sm">
                                     Categoría / Concepto
                                 </th>
                                 {data.columns.map((col, idx) => (
                                     <Fragment key={idx}>
                                         <th
                                             onClick={() => handleSort(idx)}
-                                            className="px-2 py-2 text-center text-xs font-medium text-gray-500 dark:text-slate-400 tracking-wider min-w-[80px] cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 select-none group/th"
+                                            className="px-2 py-2 text-center text-sm font-semibold text-gray-700 dark:text-slate-200 tracking-wider min-w-[80px] cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 select-none group/th"
                                         >
                                             {col.labelSub ? (
                                                 <div className="flex flex-col items-center">
-                                                    <span className="text-gray-400 text-[10px] uppercase">{col.labelMain}</span>
-                                                    <span className="font-semibold text-gray-600 group-hover/th:text-blue-600">{col.labelSub} {sortConfig?.key === idx && (sortConfig.direction === 'asc' ? '↑' : '↓')}</span>
+                                                    <span className="text-gray-500 dark:text-slate-400 text-xs uppercase tracking-wide font-medium">{col.labelMain}</span>
+                                                    <span className="font-bold text-gray-900 dark:text-white group-hover/th:text-blue-600">{col.labelSub} {sortConfig?.key === idx && (sortConfig.direction === 'asc' ? '↑' : '↓')}</span>
                                                 </div>
                                             ) : (
-                                                <span className="capitalize font-semibold group-hover/th:text-blue-600">{col.labelMain} {sortConfig?.key === idx && (sortConfig.direction === 'asc' ? '↑' : '↓')}</span>
+                                                <span className="capitalize font-bold text-gray-900 dark:text-white group-hover/th:text-blue-600">{col.labelMain} {sortConfig?.key === idx && (sortConfig.direction === 'asc' ? '↑' : '↓')}</span>
                                             )}
                                         </th>
                                         {showPercentages && (
@@ -1520,7 +1579,7 @@ export default function FlowGrid() {
                                 )}
                                 <th
                                     onClick={() => handleSort('total')}
-                                    className="px-4 py-2 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider sticky right-0 bg-muted/90 z-30 border-l border-border min-w-[120px] backdrop-blur-sm shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                                    className="px-4 py-2 text-right text-sm font-bold text-foreground uppercase tracking-wider sticky right-0 bg-muted/90 z-30 border-l border-border min-w-[120px] backdrop-blur-sm shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                                     Total
                                 </th>
                                 {showPercentages && (

@@ -241,3 +241,29 @@ export async function DELETE(request: NextRequest) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
+
+// PUT - Actualizar resumen
+export async function PUT(request: NextRequest) {
+    try {
+        const body = await request.json();
+        const { id, dueDate, totalAmount } = body;
+
+        if (!id) {
+            return NextResponse.json({ error: 'id is required' }, { status: 400 });
+        }
+
+        const dataToUpdate: any = {};
+        if (dueDate !== undefined) dataToUpdate.dueDate = new Date(dueDate);
+        if (totalAmount !== undefined) dataToUpdate.totalAmount = parseFloat(totalAmount);
+
+        const statement = await prisma.creditCardStatement.update({
+            where: { id },
+            data: dataToUpdate
+        });
+
+        return NextResponse.json(statement);
+    } catch (error: any) {
+        console.error(error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+}
