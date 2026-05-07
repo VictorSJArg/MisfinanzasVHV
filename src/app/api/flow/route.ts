@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
     });
 
     const categories = await prisma.category.findMany({
-      orderBy: { name: 'asc' }
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }]
     });
 
     // 3. Fetch Credit Card Projections from the projections API (single source of truth)

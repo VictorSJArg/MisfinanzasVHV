@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
 
     const categories = await prisma.category.findMany({
         where: { userId: user.id },
-        orderBy: { name: 'asc' }
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }]
     });
 
     return NextResponse.json(categories);

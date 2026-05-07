@@ -653,6 +653,48 @@ export default function FlowGrid() {
         });
     };
 
+    // Move category up or down (reorder)
+    const moveCategory = async (categoryId: string, direction: 'up' | 'down', type: 'INCOME' | 'EXPENSE') => {
+        if (!data) return;
+
+        // Optimistic UI update
+        setData(prevData => {
+            if (!prevData) return prevData;
+            const newData = { ...prevData };
+            const isIncome = type === 'INCOME';
+            const rows = isIncome ? [...newData.incomeRows] : [...newData.expenseRows];
+            const currentIndex = rows.findIndex(r => r.category.id === categoryId);
+
+            if (currentIndex === -1) return prevData;
+
+            const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+            // Don't allow moving virtual rows (like "Gastos TC") or moving past them
+            if (targetIndex < 0 || targetIndex >= rows.length) return prevData;
+            if ((rows[targetIndex].category as any).isVirtual) return prevData;
+
+            // Swap rows
+            [rows[currentIndex], rows[targetIndex]] = [rows[targetIndex], rows[currentIndex]];
+
+            if (isIncome) newData.incomeRows = rows;
+            else newData.expenseRows = rows;
+
+            return newData;
+        });
+
+        // Persist to backend
+        try {
+            await fetch('/api/categories/reorder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ categoryId, direction, type })
+            });
+        } catch (e) {
+            console.error('Reorder failed:', e);
+            // Revert on error
+            fetchData(expandedCategories.size > 0);
+        }
+    };
+
     const handleCellClick = (row: RowData, columnIndex: number) => {
         setSelectedCell({ categoryId: row.category.id, columnIndex });
     };
@@ -991,14 +1033,32 @@ export default function FlowGrid() {
                                 <span className="truncate" title={row.category.name}>{row.category.name}</span>
                             </div>
 
-                            {/* Botón Eliminar Categoría (Visible en Hover) */}
-                            <button
-                                onClick={(e) => { e.stopPropagation(); handleDeleteCategory(row.category.id, row.category.name); }}
-                                className="opacity-0 group-hover:opacity-100 p-1 text-gray-300 hover:text-red-600 transition-opacity"
-                                title="Eliminar categoría"
-                            >
-                                🗑️
-                            </button>
+                            {/* Botones de Reorden y Eliminar (Visible en Hover) */}
+                            {!(row.category as any).isVirtual && (
+                                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); moveCategory(row.category.id, 'up', type); }}
+                                        className="p-0.5 text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors rounded hover:bg-gray-200 dark:hover:bg-slate-700"
+                                        title="Subir categoría"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="M8 14a.75.75 0 0 1-.75-.75V4.56L4.03 7.78a.75.75 0 0 1-1.06-1.06l4.5-4.5a.75.75 0 0 1 1.06 0l4.5 4.5a.75.75 0 0 1-1.06 1.06L8.75 4.56v8.69A.75.75 0 0 1 8 14Z" clipRule="evenodd" /></svg>
+                                    </button>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); moveCategory(row.category.id, 'down', type); }}
+                                        className="p-0.5 text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors rounded hover:bg-gray-200 dark:hover:bg-slate-700"
+                                        title="Bajar categoría"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="M8 2a.75.75 0 0 1 .75.75v8.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.22 3.22V2.75A.75.75 0 0 1 8 2Z" clipRule="evenodd" /></svg>
+                                    </button>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); handleDeleteCategory(row.category.id, row.category.name); }}
+                                        className="p-0.5 text-gray-300 hover:text-red-600 transition-colors rounded hover:bg-gray-200 dark:hover:bg-slate-700"
+                                        title="Eliminar categoría"
+                                    >
+                                        🗑️
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </td>
                     {cellsToRender.map((cell, idx) => {
