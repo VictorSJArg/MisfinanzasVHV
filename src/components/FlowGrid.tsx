@@ -670,41 +670,39 @@ export default function FlowGrid() {
     const moveCategory = async (categoryId: string, type: 'INCOME' | 'EXPENSE', direction?: 'up' | 'down', targetId?: string) => {
         if (!data) return;
 
-        let orderedIds: string[] = [];
+        const isIncome = type === 'INCOME';
+        const rows = isIncome ? [...data.incomeRows] : [...data.expenseRows];
+        const currentIndex = rows.findIndex(r => r.category.id === categoryId);
+
+        if (currentIndex === -1) return;
+
+        let targetIndex = -1;
+        if (direction) {
+            targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+        } else if (targetId) {
+            targetIndex = rows.findIndex(r => r.category.id === targetId);
+        }
+
+        // Don't allow moving virtual rows or moving past them
+        if (targetIndex < 0 || targetIndex >= rows.length || currentIndex === targetIndex) return;
+        if ((rows[targetIndex].category as any).isVirtual) return;
+
+        // Remove and Insert
+        const [movedRow] = rows.splice(currentIndex, 1);
+        rows.splice(targetIndex, 0, movedRow);
+
+        const orderedIds = rows.map(r => r.category.id);
+
+        if (orderedIds.length === 0) return;
 
         // Optimistic UI update
         setData(prevData => {
             if (!prevData) return prevData;
             const newData = { ...prevData };
-            const isIncome = type === 'INCOME';
-            const rows = isIncome ? [...newData.incomeRows] : [...newData.expenseRows];
-            const currentIndex = rows.findIndex(r => r.category.id === categoryId);
-
-            if (currentIndex === -1) return prevData;
-
-            let targetIndex = -1;
-            if (direction) {
-                targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
-            } else if (targetId) {
-                targetIndex = rows.findIndex(r => r.category.id === targetId);
-            }
-
-            // Don't allow moving virtual rows or moving past them
-            if (targetIndex < 0 || targetIndex >= rows.length || currentIndex === targetIndex) return prevData;
-            if ((rows[targetIndex].category as any).isVirtual) return prevData;
-
-            // Remove and Insert
-            const [movedRow] = rows.splice(currentIndex, 1);
-            rows.splice(targetIndex, 0, movedRow);
-
             if (isIncome) newData.incomeRows = rows;
             else newData.expenseRows = rows;
-
-            orderedIds = rows.map(r => r.category.id);
             return newData;
         });
-
-        if (orderedIds.length === 0) return;
 
         // Persist to backend
         try {
