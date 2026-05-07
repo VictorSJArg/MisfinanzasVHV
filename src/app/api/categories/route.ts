@@ -7,10 +7,18 @@ export async function GET(request: NextRequest) {
     const user = await prisma.user.findFirst();
     if (!user) return NextResponse.json([]);
 
-    const categories = await prisma.category.findMany({
-        where: { userId: user.id },
-        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }]
-    });
+    let categories;
+    try {
+        categories = await prisma.$queryRawUnsafe(
+            `SELECT * FROM "Category" WHERE "userId" = $1 ORDER BY "sortOrder" ASC, name ASC`,
+            user.id
+        );
+    } catch (e) {
+        categories = await prisma.category.findMany({
+            where: { userId: user.id },
+            orderBy: { name: 'asc' }
+        });
+    }
 
     return NextResponse.json(categories);
 }

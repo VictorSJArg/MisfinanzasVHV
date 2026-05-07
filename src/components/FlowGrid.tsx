@@ -128,6 +128,15 @@ export default function FlowGrid() {
     const [filterMaxAmount, setFilterMaxAmount] = useState<string>('');
     const [showFilters, setShowFilters] = useState(false);
 
+    // Sub-concept ordering (persisted in localStorage)
+    const [subConceptOrder, setSubConceptOrder] = useState<Record<string, string[]>>(() => {
+        if (typeof window === 'undefined') return {};
+        try {
+            const saved = localStorage.getItem('subConceptOrder');
+            return saved ? JSON.parse(saved) : {};
+        } catch { return {}; }
+    });
+
     const handleSort = (key: number | 'total') => {
         setSortConfig(current => {
             if (current?.key === key) {
@@ -695,6 +704,27 @@ export default function FlowGrid() {
         }
     };
 
+    // Move sub-concept up or down within a category (persisted in localStorage)
+    const moveSubConcept = (categoryId: string, groupIdx: number, direction: 'up' | 'down', groups: { description: string }[]) => {
+        const targetIdx = direction === 'up' ? groupIdx - 1 : groupIdx + 1;
+        if (targetIdx < 0 || targetIdx >= groups.length) return;
+
+        // Build current order from the groups array
+        const currentOrder = groups.map(g => g.description || 'Sin descripción');
+        // Swap
+        [currentOrder[groupIdx], currentOrder[targetIdx]] = [currentOrder[targetIdx], currentOrder[groupIdx]];
+
+        const newSubConceptOrder = { ...subConceptOrder, [categoryId]: currentOrder };
+        setSubConceptOrder(newSubConceptOrder);
+
+        // Persist to localStorage
+        try {
+            localStorage.setItem('subConceptOrder', JSON.stringify(newSubConceptOrder));
+        } catch (e) {
+            // localStorage might be full, ignore
+        }
+    };
+
     const handleCellClick = (row: RowData, columnIndex: number) => {
         setSelectedCell({ categoryId: row.category.id, columnIndex });
     };
@@ -876,7 +906,23 @@ export default function FlowGrid() {
             }
         });
 
-        return Object.values(groups).sort((a, b) => b.total - a.total);
+        const allGroups = Object.values(groups);
+        
+        // Apply custom order if exists for this category
+        const customOrder = subConceptOrder[row.category.id];
+        if (customOrder && customOrder.length > 0) {
+            return allGroups.sort((a, b) => {
+                const idxA = customOrder.indexOf(a.description || 'Sin descripción');
+                const idxB = customOrder.indexOf(b.description || 'Sin descripción');
+                // Items in customOrder come first, in that order. New items go to end sorted by total.
+                if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                if (idxA !== -1) return -1;
+                if (idxB !== -1) return 1;
+                return b.total - a.total;
+            });
+        }
+
+        return allGroups.sort((a, b) => b.total - a.total);
     };
 
     const getCalculatedRowValues = (row: RowData): { cells: number[], total: number } => {
@@ -1186,30 +1232,49 @@ export default function FlowGrid() {
                     transactionGroups.map((group, groupIdx) => (
                         <tr key={`${row.category.id}-detail-${groupIdx}`} className="bg-gray-50/50 dark:bg-slate-800/30">
                             <td className="sticky left-0 bg-gray-50/50 dark:bg-slate-800/50 z-10 px-2 py-1 border-r border-gray-200 dark:border-slate-800">
-                                <div className="flex items-center gap-1 pl-6 text-xs text-gray-500 dark:text-slate-400">
-                                    <span className="text-gray-300">└─</span>
-                                    {editingGroup?.categoryId === row.category.id && editingGroup?.oldDescription === group.description ? (
-                                        <input
-                                            type="text"
-                                            value={editingGroup.value}
-                                            onChange={e => setEditingGroup({ ...editingGroup, value: e.target.value })}
-                                            onKeyDown={e => {
-                                                if (e.key === 'Enter') saveGroupDescription(row.category.id, group.description, editingGroup.value);
-                                                if (e.key === 'Escape') setEditingGroup(null);
-                                            }}
-                                            onBlur={() => saveGroupDescription(row.category.id, group.description, editingGroup.value)}
-                                            autoFocus
-                                            className="border rounded px-1 w-full"
-                                        />
-                                    ) : (
-                                        <span
-                                            className="truncate italic max-w-[150px] cursor-pointer hover:underline hover:text-blue-600"
-                                            title={group.description}
-                                            onClick={() => setEditingGroup({ categoryId: row.category.id, oldDescription: group.description, value: group.description || '' })}
+                                <div className="flex items-center gap-1 pl-6 text-xs text-gray-500 dark:text-slate-400 justify-between group/subrow">
+                                    <div className="flex items-center gap-1 overflow-hidden">
+                                        <span className="text-gray-300">└─</span>
+                                        {editingGroup?.categoryId === row.category.id && editingGroup?.oldDescription === group.description ? (
+                                            <input
+                                                type="text"
+                                                value={editingGroup.value}
+                                                onChange={e => setEditingGroup({ ...editingGroup, value: e.target.value })}
+                                                onKeyDown={e => {
+                                                    if (e.key === 'Enter') saveGroupDescription(row.category.id, group.description, editingGroup.value);
+                                                    if (e.key === 'Escape') setEditingGroup(null);
+                                                }}
+                                                onBlur={() => saveGroupDescription(row.category.id, group.description, editingGroup.value)}
+                                                autoFocus
+                                                className="border rounded px-1 w-full"
+                                            />
+                                        ) : (
+                                            <span
+                                                className="truncate italic max-w-[150px] cursor-pointer hover:underline hover:text-blue-600"
+                                                title={group.description}
+                                                onClick={() => setEditingGroup({ categoryId: row.category.id, oldDescription: group.description, value: group.description || '' })}
+                                            >
+                                                {group.description || 'Sin descripción'}
+                                            </span>
+                                        )}
+                                    </div>
+                                    {/* Sub-concept reorder buttons */}
+                                    <div className="flex items-center gap-0.5 opacity-0 group-hover/subrow:opacity-100 transition-opacity flex-shrink-0">
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); moveSubConcept(row.category.id, groupIdx, 'up', transactionGroups); }}
+                                            className="p-0.5 text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors rounded hover:bg-gray-200 dark:hover:bg-slate-700"
+                                            title="Subir concepto"
                                         >
-                                            {group.description || 'Sin descripción'}
-                                        </span>
-                                    )}
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3"><path fillRule="evenodd" d="M8 14a.75.75 0 0 1-.75-.75V4.56L4.03 7.78a.75.75 0 0 1-1.06-1.06l4.5-4.5a.75.75 0 0 1 1.06 0l4.5 4.5a.75.75 0 0 1-1.06 1.06L8.75 4.56v8.69A.75.75 0 0 1 8 14Z" clipRule="evenodd" /></svg>
+                                        </button>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); moveSubConcept(row.category.id, groupIdx, 'down', transactionGroups); }}
+                                            className="p-0.5 text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors rounded hover:bg-gray-200 dark:hover:bg-slate-700"
+                                            title="Bajar concepto"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3"><path fillRule="evenodd" d="M8 2a.75.75 0 0 1 .75.75v8.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.22 3.22V2.75A.75.75 0 0 1 8 2Z" clipRule="evenodd" /></svg>
+                                        </button>
+                                    </div>
                                 </div>
                             </td>
                             {data.columns.map((_, idx) => {

@@ -72,9 +72,24 @@ export async function GET(request: NextRequest) {
       orderBy: { date: 'asc' }
     });
 
-    const categories = await prisma.category.findMany({
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }]
-    });
+    // Self-healing: ensure sortOrder column exists
+    try {
+      await prisma.$executeRawUnsafe(`ALTER TABLE "Category" ADD COLUMN IF NOT EXISTS "sortOrder" INTEGER NOT NULL DEFAULT 0`);
+    } catch (e) {
+      // Ignore if column already exists or permissions issue
+    }
+
+    let categories: any[];
+    try {
+      categories = await prisma.$queryRawUnsafe(
+        `SELECT * FROM "Category" ORDER BY "sortOrder" ASC, name ASC`
+      );
+    } catch (e) {
+      // Fallback if sortOrder column doesn't exist
+      categories = await prisma.category.findMany({
+        orderBy: { name: 'asc' }
+      });
+    }
 
     // 3. Fetch Credit Card Projections from the projections API (single source of truth)
     let creditCardProjections: { date: string; amount: number; description: string; type: string; category?: string; status?: string; referenceId?: string }[] = [];
