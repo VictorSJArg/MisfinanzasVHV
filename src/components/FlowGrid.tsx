@@ -128,6 +128,10 @@ export default function FlowGrid() {
     const [filterMaxAmount, setFilterMaxAmount] = useState<string>('');
     const [showFilters, setShowFilters] = useState(false);
 
+    // Drag and Drop state
+    const [draggedCategory, setDraggedCategory] = useState<{ id: string, type: 'INCOME' | 'EXPENSE' } | null>(null);
+    const [draggedSubConcept, setDraggedSubConcept] = useState<{ categoryId: string, groupIdx: number, type: 'INCOME' | 'EXPENSE' } | null>(null);
+
     // Sub-concept ordering (persisted in localStorage)
     const [subConceptOrder, setSubConceptOrder] = useState<Record<string, string[]>>(() => {
         if (typeof window === 'undefined') return {};
@@ -662,9 +666,11 @@ export default function FlowGrid() {
         });
     };
 
-    // Move category up or down (reorder)
-    const moveCategory = async (categoryId: string, direction: 'up' | 'down', type: 'INCOME' | 'EXPENSE') => {
+    // Move category (handles arrows and drag-and-drop)
+    const moveCategory = async (categoryId: string, type: 'INCOME' | 'EXPENSE', direction?: 'up' | 'down', targetId?: string) => {
         if (!data) return;
+
+        let orderedIds: string[] = [];
 
         // Optimistic UI update
         setData(prevData => {
@@ -676,26 +682,36 @@ export default function FlowGrid() {
 
             if (currentIndex === -1) return prevData;
 
-            const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
-            // Don't allow moving virtual rows (like "Gastos TC") or moving past them
-            if (targetIndex < 0 || targetIndex >= rows.length) return prevData;
+            let targetIndex = -1;
+            if (direction) {
+                targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+            } else if (targetId) {
+                targetIndex = rows.findIndex(r => r.category.id === targetId);
+            }
+
+            // Don't allow moving virtual rows or moving past them
+            if (targetIndex < 0 || targetIndex >= rows.length || currentIndex === targetIndex) return prevData;
             if ((rows[targetIndex].category as any).isVirtual) return prevData;
 
-            // Swap rows
-            [rows[currentIndex], rows[targetIndex]] = [rows[targetIndex], rows[currentIndex]];
+            // Remove and Insert
+            const [movedRow] = rows.splice(currentIndex, 1);
+            rows.splice(targetIndex, 0, movedRow);
 
             if (isIncome) newData.incomeRows = rows;
             else newData.expenseRows = rows;
 
+            orderedIds = rows.map(r => r.category.id);
             return newData;
         });
+
+        if (orderedIds.length === 0) return;
 
         // Persist to backend
         try {
             await fetch('/api/categories/reorder', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ categoryId, direction, type })
+                body: JSON.stringify({ orderedIds, type })
             });
         } catch (e) {
             console.error('Reorder failed:', e);
@@ -705,14 +721,21 @@ export default function FlowGrid() {
     };
 
     // Move sub-concept up or down within a category (persisted in localStorage)
-    const moveSubConcept = (categoryId: string, groupIdx: number, direction: 'up' | 'down', groups: { description: string }[]) => {
-        const targetIdx = direction === 'up' ? groupIdx - 1 : groupIdx + 1;
-        if (targetIdx < 0 || targetIdx >= groups.length) return;
+    const moveSubConcept = (categoryId: string, sourceIdx: number, groups: { description: string }[], direction?: 'up' | 'down', targetIdx?: number) => {
+        let finalTargetIdx = -1;
+        if (direction) {
+            finalTargetIdx = direction === 'up' ? sourceIdx - 1 : sourceIdx + 1;
+        } else if (targetIdx !== undefined) {
+            finalTargetIdx = targetIdx;
+        }
+
+        if (finalTargetIdx < 0 || finalTargetIdx >= groups.length || sourceIdx === finalTargetIdx) return;
 
         // Build current order from the groups array
         const currentOrder = groups.map(g => g.description || 'Sin descripción');
-        // Swap
-        [currentOrder[groupIdx], currentOrder[targetIdx]] = [currentOrder[targetIdx], currentOrder[groupIdx]];
+        // Remove and Insert
+        const [movedItem] = currentOrder.splice(sourceIdx, 1);
+        currentOrder.splice(finalTargetIdx, 0, movedItem);
 
         const newSubConceptOrder = { ...subConceptOrder, [categoryId]: currentOrder };
         setSubConceptOrder(newSubConceptOrder);
@@ -1062,7 +1085,30 @@ export default function FlowGrid() {
 
         return (
             <Fragment key={row.category.id}>
-                <tr className="hover:bg-gray-50 dark:hover:bg-slate-800 group transition-colors">
+                <tr 
+                    className={`hover:bg-gray-50 dark:hover:bg-slate-800 group transition-colors ${draggedCategory?.id === row.category.id ? 'opacity-50' : ''}`}
+                    draggable={!(row.category as any).isVirtual}
+                    onDragStart={(e) => {
+                        setDraggedCategory({ id: row.category.id, type });
+                        e.dataTransfer.effectAllowed = 'move';
+                    }}
+                    onDragOver={(e) => {
+                        e.preventDefault();
+                        if (draggedCategory && draggedCategory.type === type && draggedCategory.id !== row.category.id && !(row.category as any).isVirtual) {
+                            e.dataTransfer.dropEffect = 'move';
+                        } else {
+                            e.dataTransfer.dropEffect = 'none';
+                        }
+                    }}
+                    onDrop={(e) => {
+                        e.preventDefault();
+                        if (draggedCategory && draggedCategory.type === type && draggedCategory.id !== row.category.id && !(row.category as any).isVirtual) {
+                            moveCategory(draggedCategory.id, type, undefined, row.category.id);
+                        }
+                        setDraggedCategory(null);
+                    }}
+                    onDragEnd={() => setDraggedCategory(null)}
+                >
                     <td className="sticky left-0 bg-white dark:bg-slate-900 group-hover:bg-gray-50 dark:group-hover:bg-slate-800 z-10 px-2 py-2 text-gray-700 dark:text-slate-200 border-r border-gray-200 dark:border-slate-800 font-medium relative">
                         <div className="flex items-center gap-1 justify-between">
                             <div className="flex items-center gap-1 overflow-hidden">
@@ -1076,21 +1122,21 @@ export default function FlowGrid() {
                                 ) : (
                                     <span className="w-5 flex-shrink-0"></span>
                                 )}
-                                <span className="truncate" title={row.category.name}>{row.category.name}</span>
+                                <span className="truncate cursor-grab active:cursor-grabbing" title={row.category.name}>{row.category.name}</span>
                             </div>
 
                             {/* Botones de Reorden y Eliminar (Visible en Hover) */}
                             {!(row.category as any).isVirtual && (
                                 <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <button
-                                        onClick={(e) => { e.stopPropagation(); moveCategory(row.category.id, 'up', type); }}
+                                        onClick={(e) => { e.stopPropagation(); moveCategory(row.category.id, type, 'up'); }}
                                         className="p-0.5 text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors rounded hover:bg-gray-200 dark:hover:bg-slate-700"
                                         title="Subir categoría"
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5"><path fillRule="evenodd" d="M8 14a.75.75 0 0 1-.75-.75V4.56L4.03 7.78a.75.75 0 0 1-1.06-1.06l4.5-4.5a.75.75 0 0 1 1.06 0l4.5 4.5a.75.75 0 0 1-1.06 1.06L8.75 4.56v8.69A.75.75 0 0 1 8 14Z" clipRule="evenodd" /></svg>
                                     </button>
                                     <button
-                                        onClick={(e) => { e.stopPropagation(); moveCategory(row.category.id, 'down', type); }}
+                                        onClick={(e) => { e.stopPropagation(); moveCategory(row.category.id, type, 'down'); }}
                                         className="p-0.5 text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors rounded hover:bg-gray-200 dark:hover:bg-slate-700"
                                         title="Bajar categoría"
                                     >
@@ -1230,7 +1276,31 @@ export default function FlowGrid() {
                 {/* BLOCK 2: Transaction Groups (Standard) - White/Gray */}
                 {isExpanded && (!row.subRows || row.subRows.length === 0) && (
                     transactionGroups.map((group, groupIdx) => (
-                        <tr key={`${row.category.id}-detail-${groupIdx}`} className="bg-gray-50/50 dark:bg-slate-800/30">
+                        <tr 
+                            key={`${row.category.id}-detail-${groupIdx}`} 
+                            className={`bg-gray-50/50 dark:bg-slate-800/30 ${draggedSubConcept?.categoryId === row.category.id && draggedSubConcept?.groupIdx === groupIdx ? 'opacity-50' : ''}`}
+                            draggable
+                            onDragStart={(e) => {
+                                setDraggedSubConcept({ categoryId: row.category.id, groupIdx, type });
+                                e.dataTransfer.effectAllowed = 'move';
+                            }}
+                            onDragOver={(e) => {
+                                e.preventDefault();
+                                if (draggedSubConcept && draggedSubConcept.type === type && draggedSubConcept.categoryId === row.category.id && draggedSubConcept.groupIdx !== groupIdx) {
+                                    e.dataTransfer.dropEffect = 'move';
+                                } else {
+                                    e.dataTransfer.dropEffect = 'none';
+                                }
+                            }}
+                            onDrop={(e) => {
+                                e.preventDefault();
+                                if (draggedSubConcept && draggedSubConcept.type === type && draggedSubConcept.categoryId === row.category.id && draggedSubConcept.groupIdx !== groupIdx) {
+                                    moveSubConcept(row.category.id, draggedSubConcept.groupIdx, transactionGroups, undefined, groupIdx);
+                                }
+                                setDraggedSubConcept(null);
+                            }}
+                            onDragEnd={() => setDraggedSubConcept(null)}
+                        >
                             <td className="sticky left-0 bg-gray-50/50 dark:bg-slate-800/50 z-10 px-2 py-1 border-r border-gray-200 dark:border-slate-800">
                                 <div className="flex items-center gap-1 pl-6 text-xs text-gray-500 dark:text-slate-400 justify-between group/subrow">
                                     <div className="flex items-center gap-1 overflow-hidden">
@@ -1259,16 +1329,16 @@ export default function FlowGrid() {
                                         )}
                                     </div>
                                     {/* Sub-concept reorder buttons */}
-                                    <div className="flex items-center gap-0.5 opacity-0 group-hover/subrow:opacity-100 transition-opacity flex-shrink-0">
+                                    <div className="flex items-center gap-0.5 opacity-0 group-hover/subrow:opacity-100 transition-opacity flex-shrink-0 cursor-grab active:cursor-grabbing">
                                         <button
-                                            onClick={(e) => { e.stopPropagation(); moveSubConcept(row.category.id, groupIdx, 'up', transactionGroups); }}
+                                            onClick={(e) => { e.stopPropagation(); moveSubConcept(row.category.id, groupIdx, transactionGroups, 'up'); }}
                                             className="p-0.5 text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors rounded hover:bg-gray-200 dark:hover:bg-slate-700"
                                             title="Subir concepto"
                                         >
                                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3"><path fillRule="evenodd" d="M8 14a.75.75 0 0 1-.75-.75V4.56L4.03 7.78a.75.75 0 0 1-1.06-1.06l4.5-4.5a.75.75 0 0 1 1.06 0l4.5 4.5a.75.75 0 0 1-1.06 1.06L8.75 4.56v8.69A.75.75 0 0 1 8 14Z" clipRule="evenodd" /></svg>
                                         </button>
                                         <button
-                                            onClick={(e) => { e.stopPropagation(); moveSubConcept(row.category.id, groupIdx, 'down', transactionGroups); }}
+                                            onClick={(e) => { e.stopPropagation(); moveSubConcept(row.category.id, groupIdx, transactionGroups, 'down'); }}
                                             className="p-0.5 text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors rounded hover:bg-gray-200 dark:hover:bg-slate-700"
                                             title="Bajar concepto"
                                         >
