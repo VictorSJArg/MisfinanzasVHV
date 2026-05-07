@@ -445,7 +445,7 @@ export default function FlowGrid() {
                     if (newAmount === 0) {
                         categoryTxs.splice(idx, 1);
                     } else {
-                        categoryTxs[idx] = { ...categoryTxs[idx], amount: newAmount, description: actualDescription || undefined };
+                        categoryTxs[idx] = { ...categoryTxs[idx], amount: newAmount, description: actualDescription || null };
                     }
                 }
             } else if (newAmount > 0) {
@@ -454,7 +454,7 @@ export default function FlowGrid() {
                     amount: newAmount,
                     date: column.startDate,
                     type: row.category.type,
-                    description: actualDescription || undefined,
+                    description: actualDescription || null,
                     categoryId: row.category.id,
                     status: 'PENDING'
                 } as any);
