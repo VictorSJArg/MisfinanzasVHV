@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAssistantAuth } from '@/lib/apiAuth';
 
 interface ChatRequest {
     message: string;
@@ -17,20 +18,13 @@ interface ChatRequest {
 
 export async function POST(request: NextRequest) {
     try {
+        const authError = requireAssistantAuth(request);
+        if (authError) return authError;
+
         const body: ChatRequest = await request.json();
         const { message, intent, params } = body;
 
         // Validar autenticación (opcional pero recomendado)
-        const authHeader = request.headers.get('authorization');
-        const expectedToken = process.env.N8N_WEBHOOK_SECRET;
-
-        if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
-            return NextResponse.json(
-                { success: false, error: 'Unauthorized' },
-                { status: 401 }
-            );
-        }
-
         // Construir query a /api/analytics basado en la intención
         const analyticsUrl = buildAnalyticsUrl(intent, params);
 

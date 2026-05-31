@@ -651,11 +651,13 @@ export default function FinancialChatbot() {
             const response = await fetch(`/api/transactions/search?${queryParams.toString()}`);
             const result = await response.json();
 
-            if (!result.success || result.data.length === 0) {
+            const foundTransactions = Array.isArray(result.data) ? result.data : (result.data?.transactions || []);
+
+            if (!result.success || foundTransactions.length === 0) {
                 return `❌ No encontré transacciones con "${params.query}"`;
             }
 
-            const transactions = result.data;
+            const transactions = foundTransactions;
 
             if (transactions.length === 1) {
                 // Solo una, pedir confirmación
@@ -748,11 +750,13 @@ export default function FinancialChatbot() {
             const response = await fetch(`/api/transactions/search?${queryParams.toString()}`);
             const result = await response.json();
 
-            if (!result.success || result.data.length === 0) {
+            const foundTransactions = Array.isArray(result.data) ? result.data : (result.data?.transactions || []);
+
+            if (!result.success || foundTransactions.length === 0) {
                 return `❌ No encontré transacciones para eliminar.`;
             }
 
-            const transactions = result.data;
+            const transactions = foundTransactions;
 
             if (transactions.length === 1) {
                 const tx = transactions[0];
@@ -949,14 +953,22 @@ export default function FinancialChatbot() {
 
     // ============= FORMAT RESPONSES =============
     const formatSearchResponse = (data: any): string => {
-        if (!data || data.length === 0) {
+        const transactions = Array.isArray(data) ? data : (data?.transactions || []);
+
+        if (!transactions || transactions.length === 0) {
             return '🔍 No encontré transacciones con esos criterios.';
         }
 
-        const total = data.reduce((sum: number, tx: any) => sum + Number(tx.amount), 0);
+        const total = typeof data?.totalAmount === 'number'
+            ? data.totalAmount
+            : transactions.reduce((sum: number, tx: any) => sum + Number(tx.amount), 0);
         let response = `🔍 Encontré ${data.length} transacción${data.length > 1 ? 'es' : ''}:\n\n`;
 
-        data.slice(0, 10).forEach((tx: any) => {
+        if (!Array.isArray(data)) {
+            response = `Encontre ${transactions.length} transacciones:\n\n`;
+        }
+
+        transactions.slice(0, 10).forEach((tx: any) => {
             const emoji = tx.type === 'INCOME' ? '💰' : '💸';
             response += `${emoji} ${format(new Date(tx.date), 'dd/MM/yyyy', { locale: es })} - ${tx.description || 'Sin descripción'}\n   $${Number(tx.amount).toLocaleString('es-AR')} (${tx.category || 'Sin categoría'})\n\n`;
         });

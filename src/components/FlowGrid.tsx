@@ -575,12 +575,7 @@ export default function FlowGrid() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         id: tx.id,
-                        description: newDescription,
-                        amount: tx.amount,
-                        date: tx.date,
-                        categoryId,
-                        accountId: null,
-                        type: tx.amount > 0 ? 'INCOME' : 'EXPENSE' // Ensure type consistency if needed, though PUT backend handles optional logic
+                        description: newDescription
                     })
                 })
             ));

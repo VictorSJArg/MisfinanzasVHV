@@ -1,8 +1,17 @@
-
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { deleteTransactionWithBalance, deleteTransactionsWithBalance, updateTransactionWithBalance } from '@/lib/transactions';
 
-// GET - Obtener transacciones de una celda específica (categoría + período)
+function errorMessage(error: unknown) {
+    return error instanceof Error ? error.message : 'Unknown error';
+}
+
+function errorStatus(error: unknown) {
+    return error instanceof Error && error.message === 'Transaction not found' ? 404 : 500;
+}
+
+// GET - Obtener transacciones de una celda especifica.
 export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const categoryId = searchParams.get('categoryId');
@@ -10,7 +19,7 @@ export async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate');
 
     if (!categoryId || !startDate || !endDate) {
-        return NextResponse.json({ error: "Missing parameters" }, { status: 400 });
+        return NextResponse.json({ error: 'Missing parameters' }, { status: 400 });
     }
 
     const transactions = await prisma.transaction.findMany({
@@ -31,60 +40,34 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(transactions);
 }
 
-// PUT - Actualizar una transacción
+// PUT - Actualizar una transaccion y mantener el saldo de cuenta sincronizado.
 export async function PUT(request: NextRequest) {
     try {
         const body = await request.json();
-        const { id, amount, date, description, categoryId, accountId } = body;
+        const { id, amount, date, description, categoryId, accountId, type, status } = body;
 
         if (!id) {
-            return NextResponse.json({ error: "Transaction ID required" }, { status: 400 });
+            return NextResponse.json({ error: 'Transaction ID required' }, { status: 400 });
         }
 
-        // Obtener transacción actual para ajustar balance
-        const currentTx = await prisma.transaction.findUnique({
-            where: { id }
-        });
-
-        if (!currentTx) {
-            return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
-        }
-
-        // Revertir el balance anterior
-        const oldMultiplier = currentTx.type === 'INCOME' ? -1 : 1;
-        await prisma.account.update({
-            where: { id: currentTx.accountId },
-            data: { balance: { increment: Number(currentTx.amount) * oldMultiplier } }
-        });
-
-        // Actualizar transacción
-        const updatedTx = await prisma.transaction.update({
-            where: { id },
-            data: {
-                amount: amount !== undefined ? Number(amount) : undefined,
-                date: date ? new Date(date) : undefined,
-                description: description !== undefined ? description : undefined,
-                categoryId: categoryId !== undefined ? categoryId : undefined,
-                accountId: accountId !== undefined ? accountId : undefined
-            }
-        });
-
-        // Aplicar nuevo balance
-        const newMultiplier = updatedTx.type === 'INCOME' ? 1 : -1;
-        await prisma.account.update({
-            where: { id: updatedTx.accountId },
-            data: { balance: { increment: Number(updatedTx.amount) * newMultiplier } }
+        const updatedTx = await updateTransactionWithBalance(id, {
+            amount,
+            date,
+            description,
+            categoryId,
+            accountId,
+            type,
+            status
         });
 
         return NextResponse.json(updatedTx);
-    } catch (e: any) {
-        console.error(e);
-        return NextResponse.json({ error: e.message }, { status: 500 });
+    } catch (error: unknown) {
+        console.error(error);
+        return NextResponse.json({ error: errorMessage(error) }, { status: errorStatus(error) });
     }
 }
 
-// DELETE - Eliminar una transacción
-// DELETE - Eliminar una transacción o todas las de una celda
+// DELETE - Eliminar una transaccion o todas las de una celda.
 export async function DELETE(request: NextRequest) {
     try {
         const searchParams = request.nextUrl.searchParams;
@@ -94,18 +77,7 @@ export async function DELETE(request: NextRequest) {
         const endDate = searchParams.get('endDate');
 
         if (id) {
-            // Eliminar una sola transacción
-            const tx = await prisma.transaction.findUnique({ where: { id } });
-            if (!tx) return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
-
-            // Revertir balance
-            const multiplier = tx.type === 'INCOME' ? -1 : 1;
-            await prisma.account.update({
-                where: { id: tx.accountId },
-                data: { balance: { increment: Number(tx.amount) * multiplier } }
-            });
-
-            await prisma.transaction.delete({ where: { id } });
+            await deleteTransactionWithBalance(id);
             return NextResponse.json({ success: true });
         }
 
@@ -113,8 +85,7 @@ export async function DELETE(request: NextRequest) {
         const description = searchParams.get('description');
 
         if (categoryId && startDate && endDate) {
-            // Construir filtro
-            const whereClause: any = {
+            const whereClause: Prisma.TransactionWhereInput = {
                 categoryId,
                 date: {
                     gte: new Date(startDate),
@@ -122,46 +93,26 @@ export async function DELETE(request: NextRequest) {
                 }
             };
 
-            // Filtrado opcional por descripción si se solicita explícitamente (para borrar subcategorías específicas)
             if (matchDescription) {
                 if (description !== null && description !== '') {
                     whereClause.description = description;
                 } else {
-                    // Si se activa matchDescription pero no se envia valor, buscamos description = null
-                    // También incluimos "Sin descripción" por compatibilidad con datos corruptos antiguos
                     whereClause.OR = [
                         { description: null },
                         { description: '' },
+                        { description: 'Sin descripcion' },
                         { description: 'Sin descripción' }
                     ];
-                    delete whereClause.description; // Remove simple description filter if exists
                 }
             }
 
-            // Eliminar transacciones que coincidan con el filtro
-            const transactions = await prisma.transaction.findMany({
-                where: whereClause
-            });
-
-            // Procesar cada transacción (idealmente en una transacción de DB, pero iteramos por simplicidad con update de cuentas)
-            for (const tx of transactions) {
-                if (tx.accountId) {
-                    const multiplier = tx.type === 'INCOME' ? -1 : 1;
-                    await prisma.account.update({
-                        where: { id: tx.accountId },
-                        data: { balance: { increment: Number(tx.amount) * multiplier } }
-                    });
-                }
-            }
-
-            await prisma.transaction.deleteMany({ where: whereClause });
-
-            return NextResponse.json({ success: true, count: transactions.length });
+            const count = await deleteTransactionsWithBalance(whereClause);
+            return NextResponse.json({ success: true, count });
         }
 
-        return NextResponse.json({ error: "Missing parameters" }, { status: 400 });
-    } catch (e: any) {
-        console.error(e);
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return NextResponse.json({ error: 'Missing parameters' }, { status: 400 });
+    } catch (error: unknown) {
+        console.error(error);
+        return NextResponse.json({ error: errorMessage(error) }, { status: errorStatus(error) });
     }
 }

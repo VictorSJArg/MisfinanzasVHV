@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { deleteTransactionWithBalance } from '@/lib/transactions';
+
+function errorMessage(error: unknown) {
+    return error instanceof Error ? error.message : 'Unknown error';
+}
 
 export async function DELETE(request: NextRequest) {
     try {
@@ -9,19 +14,18 @@ export async function DELETE(request: NextRequest) {
 
         if (!transactionId) {
             return NextResponse.json(
-                { success: false, error: 'ID de transacción requerido' },
+                { success: false, error: 'ID de transaccion requerido' },
                 { status: 400 }
             );
         }
 
         if (confirm !== 'true') {
             return NextResponse.json(
-                { success: false, error: 'Confirmación requerida' },
+                { success: false, error: 'Confirmacion requerida' },
                 { status: 400 }
             );
         }
 
-        // Obtener transacción
         const transaction = await prisma.transaction.findUnique({
             where: { id: transactionId },
             include: {
@@ -32,26 +36,12 @@ export async function DELETE(request: NextRequest) {
 
         if (!transaction) {
             return NextResponse.json(
-                { success: false, error: 'Transacción no encontrada' },
+                { success: false, error: 'Transaccion no encontrada' },
                 { status: 404 }
             );
         }
 
-        // Revertir balance de cuenta
-        const multiplier = transaction.type === 'INCOME' ? -1 : 1;
-        await prisma.account.update({
-            where: { id: transaction.accountId },
-            data: {
-                balance: {
-                    increment: Number(transaction.amount) * multiplier,
-                },
-            },
-        });
-
-        // Eliminar transacción
-        await prisma.transaction.delete({
-            where: { id: transactionId },
-        });
+        await deleteTransactionWithBalance(transactionId);
 
         return NextResponse.json({
             success: true,
@@ -65,15 +55,15 @@ export async function DELETE(request: NextRequest) {
                     date: transaction.date,
                 },
             },
-            message: '✅ Transacción eliminada exitosamente',
+            message: 'Transaccion eliminada exitosamente',
         });
-    } catch (error) {
+    } catch (error: unknown) {
         console.error('Error deleting transaction:', error);
         return NextResponse.json(
             {
                 success: false,
-                error: 'Error al eliminar transacción',
-                details: error instanceof Error ? error.message : 'Unknown error',
+                error: 'Error al eliminar transaccion',
+                details: errorMessage(error),
             },
             { status: 500 }
         );

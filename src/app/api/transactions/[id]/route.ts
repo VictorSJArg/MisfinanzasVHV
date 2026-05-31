@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { deleteTransactionWithBalance, updateTransactionWithBalance } from '@/lib/transactions';
 
 export const dynamic = 'force-dynamic';
+
+function errorStatus(error: unknown) {
+    return error instanceof Error && error.message === 'Transaction not found' ? 404 : 500;
+}
+
+function errorMessage(error: unknown) {
+    return error instanceof Error ? error.message : 'Unknown error';
+}
 
 // GET - Get a specific transaction
 export async function GET(
@@ -20,17 +29,17 @@ export async function GET(
         });
 
         if (!transaction) {
-            return NextResponse.json({ error: 'Transacción no encontrada' }, { status: 404 });
+            return NextResponse.json({ error: 'Transaccion no encontrada' }, { status: 404 });
         }
 
         return NextResponse.json(transaction);
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error fetching transaction:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
     }
 }
 
-// PUT - Update a transaction
+// PUT - Update a transaction and keep the account balance in sync
 export async function PUT(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -39,57 +48,35 @@ export async function PUT(
         const { id } = await params;
         const body = await request.json();
 
-        console.log('Updating transaction:', id, body);
-
-        // Validate the transaction exists
-        const existing = await prisma.transaction.findUnique({ where: { id } });
-        if (!existing) {
-            return NextResponse.json({ error: 'Transacción no encontrada' }, { status: 404 });
-        }
-
-        // Build update data
-        const updateData: any = {};
-        if (body.amount !== undefined) updateData.amount = Number(body.amount);
-        if (body.description !== undefined) updateData.description = body.description;
-        if (body.date !== undefined) updateData.date = new Date(body.date);
-        if (body.categoryId !== undefined) updateData.categoryId = body.categoryId;
-        if (body.status !== undefined) updateData.status = body.status;
-
-        const updated = await prisma.transaction.update({
-            where: { id },
-            data: updateData
+        const updated = await updateTransactionWithBalance(id, {
+            amount: body.amount,
+            description: body.description,
+            date: body.date,
+            categoryId: body.categoryId,
+            accountId: body.accountId,
+            type: body.type,
+            status: body.status
         });
 
-        console.log('Transaction updated:', updated);
         return NextResponse.json(updated);
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error updating transaction:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ error: errorMessage(error) }, { status: errorStatus(error) });
     }
 }
 
-// DELETE - Delete a transaction
+// DELETE - Delete a transaction and reverse its account balance impact
 export async function DELETE(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
         const { id } = await params;
+        await deleteTransactionWithBalance(id);
 
-        console.log('Deleting transaction:', id);
-
-        // Validate the transaction exists
-        const existing = await prisma.transaction.findUnique({ where: { id } });
-        if (!existing) {
-            return NextResponse.json({ error: 'Transacción no encontrada' }, { status: 404 });
-        }
-
-        await prisma.transaction.delete({ where: { id } });
-
-        console.log('Transaction deleted:', id);
-        return NextResponse.json({ success: true, message: 'Transacción eliminada' });
-    } catch (error: any) {
+        return NextResponse.json({ success: true, message: 'Transaccion eliminada' });
+    } catch (error: unknown) {
         console.error('Error deleting transaction:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ error: errorMessage(error) }, { status: errorStatus(error) });
     }
 }

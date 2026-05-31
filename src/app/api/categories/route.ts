@@ -1,23 +1,28 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { balanceMultiplier } from '@/lib/transactions';
 
 // GET - Obtener todas las categorías
-export async function GET(request: NextRequest) {
+export async function GET() {
     const user = await prisma.user.findFirst();
     if (!user) return NextResponse.json([]);
 
-    let categories;
+    let categories: unknown[];
     try {
-        categories = await prisma.$queryRawUnsafe(
-            `SELECT * FROM "Category" WHERE "userId" = $1 ORDER BY "sortOrder" ASC, name ASC`,
-            user.id
-        );
-    } catch (e) {
-        categories = await prisma.category.findMany({
-            where: { userId: user.id },
-            orderBy: { name: 'asc' }
-        });
+        categories = await prisma.$queryRaw`
+            SELECT id, name, type, icon, color, "parentId", "sortOrder", "userId"
+            FROM "Category"
+            WHERE "userId" = ${user.id}
+            ORDER BY "sortOrder" ASC, name ASC
+        `;
+    } catch {
+        categories = await prisma.$queryRaw`
+            SELECT id, name, type, icon, color, "parentId", 0 AS "sortOrder", "userId"
+            FROM "Category"
+            WHERE "userId" = ${user.id}
+            ORDER BY name ASC
+        `;
     }
 
     return NextResponse.json(categories);
@@ -54,9 +59,10 @@ export async function POST(request: NextRequest) {
         });
 
         return NextResponse.json(category);
-    } catch (e: any) {
-        console.error(e);
-        return NextResponse.json({ error: e.message }, { status: 500 });
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        console.error(error);
+        return NextResponse.json({ error: message }, { status: 500 });
     }
 }
 
@@ -68,27 +74,20 @@ export async function DELETE(request: NextRequest) {
 
         if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
 
-        // Obtener transacciones para revertir saldos
-        const transactions = await prisma.transaction.findMany({ where: { categoryId: id } });
-
         await prisma.$transaction(async (tx) => {
-            // 1. Revertir saldos de cuentas afectadas
-            for (const t of transactions) {
-                if (!t.accountId) continue;
+            const transactions = await tx.transaction.findMany({ where: { categoryId: id } });
+            const balanceDeltas = new Map<string, number>();
 
-                const account = await tx.account.findUnique({ where: { id: t.accountId } });
-                if (account) {
-                    const amount = Number(t.amount);
-                    // Si era INGRESO, restamos al saldo. Si era GASTO, sumamos.
-                    const newBalance = t.type === 'INCOME'
-                        ? Number(account.balance) - amount
-                        : Number(account.balance) + amount;
+            for (const transaction of transactions) {
+                const delta = Number(transaction.amount) * -balanceMultiplier(transaction.type);
+                balanceDeltas.set(transaction.accountId, (balanceDeltas.get(transaction.accountId) || 0) + delta);
+            }
 
-                    await tx.account.update({
-                        where: { id: account.id },
-                        data: { balance: newBalance }
-                    });
-                }
+            for (const [accountId, delta] of balanceDeltas) {
+                await tx.account.update({
+                    where: { id: accountId },
+                    data: { balance: { increment: delta } }
+                });
             }
 
             // 2. Borrar transacciones
@@ -100,8 +99,9 @@ export async function DELETE(request: NextRequest) {
 
         return NextResponse.json({ success: true });
 
-    } catch (e: any) {
-        console.error("Delete Error:", e);
-        return NextResponse.json({ error: e.message }, { status: 500 });
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        console.error("Delete Error:", error);
+        return NextResponse.json({ error: message }, { status: 500 });
     }
 }

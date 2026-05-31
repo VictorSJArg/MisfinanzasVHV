@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { createTransactionWithBalance } from '@/lib/transactions';
+
+function errorMessage(error: unknown) {
+    return error instanceof Error ? error.message : 'Unknown error';
+}
 
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
         const { amount, description, type, categoryId, categoryName, accountId, date } = body;
 
-        // Validación
         if (!amount || !type) {
             return NextResponse.json(
                 { success: false, error: 'Monto y tipo son requeridos' },
@@ -14,7 +18,6 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Obtener usuario por defecto
         const user = await prisma.user.findFirst();
         if (!user) {
             return NextResponse.json(
@@ -23,7 +26,6 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Obtener cuenta por defecto si no se especificó
         let finalAccountId = accountId;
         if (!finalAccountId) {
             const account = await prisma.account.findFirst({
@@ -31,17 +33,15 @@ export async function POST(request: NextRequest) {
             });
             if (!account) {
                 return NextResponse.json(
-                    { success: false, error: 'No se encontró cuenta' },
+                    { success: false, error: 'No se encontro cuenta' },
                     { status: 404 }
                 );
             }
             finalAccountId = account.id;
         }
 
-        // Obtener o crear categoría
         let finalCategoryId = categoryId;
         if (!finalCategoryId && categoryName) {
-            // Buscar categoría existente por nombre (case-insensitive)
             let category = await prisma.category.findFirst({
                 where: {
                     name: {
@@ -49,10 +49,10 @@ export async function POST(request: NextRequest) {
                         mode: 'insensitive'
                     },
                     userId: user.id,
+                    type,
                 },
             });
 
-            // Si no existe, crearla
             if (!category) {
                 category = await prisma.category.create({
                     data: {
@@ -66,32 +66,22 @@ export async function POST(request: NextRequest) {
             finalCategoryId = category.id;
         }
 
-        // Crear transacción con status PENDING por defecto
-        const transaction = await prisma.transaction.create({
-            data: {
-                amount: Number(amount),
-                description: description || null,
-                type,
-                categoryId: finalCategoryId || null,
-                accountId: finalAccountId,
-                userId: user.id,
-                date: date ? new Date(date) : new Date(),
-                status: 'PENDING', // Por defecto no pagado
-            },
+        const created = await createTransactionWithBalance({
+            amount,
+            description: description || null,
+            type,
+            categoryId: finalCategoryId || null,
+            accountId: finalAccountId,
+            userId: user.id,
+            date: date ? new Date(date) : new Date(),
+            status: 'PENDING',
+        });
+
+        const transaction = await prisma.transaction.findUnique({
+            where: { id: created.id },
             include: {
                 category: true,
                 account: true,
-            },
-        });
-
-        // Actualizar balance de cuenta
-        const multiplier = type === 'INCOME' ? 1 : -1;
-        await prisma.account.update({
-            where: { id: finalAccountId },
-            data: {
-                balance: {
-                    increment: Number(amount) * multiplier,
-                },
             },
         });
 
@@ -99,24 +89,24 @@ export async function POST(request: NextRequest) {
             success: true,
             data: {
                 transaction: {
-                    id: transaction.id,
-                    amount: Number(transaction.amount),
-                    description: transaction.description,
-                    type: transaction.type,
-                    category: transaction.category?.name,
-                    account: transaction.account?.name,
-                    date: transaction.date,
+                    id: transaction?.id,
+                    amount: Number(transaction?.amount || 0),
+                    description: transaction?.description,
+                    type: transaction?.type,
+                    category: transaction?.category?.name,
+                    account: transaction?.account?.name,
+                    date: transaction?.date,
                 },
             },
-            message: '✅ Transacción creada exitosamente',
+            message: 'Transaccion creada exitosamente',
         });
-    } catch (error) {
+    } catch (error: unknown) {
         console.error('Error creating transaction:', error);
         return NextResponse.json(
             {
                 success: false,
-                error: 'Error al crear transacción',
-                details: error instanceof Error ? error.message : 'Unknown error',
+                error: 'Error al crear transaccion',
+                details: errorMessage(error),
             },
             { status: 500 }
         );

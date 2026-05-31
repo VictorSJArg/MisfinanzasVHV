@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { updateTransactionWithBalance } from '@/lib/transactions';
+
+function errorMessage(error: unknown) {
+    return error instanceof Error ? error.message : 'Unknown error';
+}
 
 export async function PUT(request: NextRequest) {
     try {
@@ -8,57 +13,31 @@ export async function PUT(request: NextRequest) {
 
         if (!transactionId) {
             return NextResponse.json(
-                { success: false, error: 'ID de transacción requerido' },
+                { success: false, error: 'ID de transaccion requerido' },
                 { status: 400 }
             );
         }
 
-        // Obtener transacción existente
         const existing = await prisma.transaction.findUnique({
             where: { id: transactionId },
         });
 
         if (!existing) {
             return NextResponse.json(
-                { success: false, error: 'Transacción no encontrada' },
+                { success: false, error: 'Transaccion no encontrada' },
                 { status: 404 }
             );
         }
 
-        // Si cambia el monto, ajustar balance de cuenta
-        if (amount !== undefined && Number(amount) !== Number(existing.amount)) {
-            // Revertir monto anterior
-            const oldMultiplier = existing.type === 'INCOME' ? -1 : 1;
-            await prisma.account.update({
-                where: { id: existing.accountId },
-                data: {
-                    balance: {
-                        increment: Number(existing.amount) * oldMultiplier,
-                    },
-                },
-            });
+        const updated = await updateTransactionWithBalance(transactionId, {
+            amount,
+            description,
+            categoryId,
+            date,
+        });
 
-            // Aplicar nuevo monto
-            const newMultiplier = existing.type === 'INCOME' ? 1 : -1;
-            await prisma.account.update({
-                where: { id: existing.accountId },
-                data: {
-                    balance: {
-                        increment: Number(amount) * newMultiplier,
-                    },
-                },
-            });
-        }
-
-        // Actualizar transacción
-        const updated = await prisma.transaction.update({
-            where: { id: transactionId },
-            data: {
-                amount: amount !== undefined ? Number(amount) : undefined,
-                description: description !== undefined ? description : undefined,
-                categoryId: categoryId !== undefined ? categoryId : undefined,
-                date: date ? new Date(date) : undefined,
-            },
+        const transaction = await prisma.transaction.findUnique({
+            where: { id: updated.id },
             include: {
                 category: true,
                 account: true,
@@ -69,24 +48,24 @@ export async function PUT(request: NextRequest) {
             success: true,
             data: {
                 transaction: {
-                    id: updated.id,
-                    amount: Number(updated.amount),
-                    description: updated.description,
-                    type: updated.type,
-                    category: updated.category?.name,
-                    account: updated.account?.name,
-                    date: updated.date,
+                    id: transaction?.id,
+                    amount: Number(transaction?.amount || 0),
+                    description: transaction?.description,
+                    type: transaction?.type,
+                    category: transaction?.category?.name,
+                    account: transaction?.account?.name,
+                    date: transaction?.date,
                 },
             },
-            message: '✅ Transacción actualizada exitosamente',
+            message: 'Transaccion actualizada exitosamente',
         });
-    } catch (error) {
+    } catch (error: unknown) {
         console.error('Error updating transaction:', error);
         return NextResponse.json(
             {
                 success: false,
-                error: 'Error al actualizar transacción',
-                details: error instanceof Error ? error.message : 'Unknown error',
+                error: 'Error al actualizar transaccion',
+                details: errorMessage(error),
             },
             { status: 500 }
         );
