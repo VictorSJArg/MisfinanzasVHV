@@ -289,6 +289,19 @@ async function handleSearchTransactions(payload: Record<string, unknown>) {
 
     const total = transactions.reduce((sum, transaction) => sum + Number(transaction.amount), 0);
 
+    let reply = 'No encontré transacciones.';
+    if (transactions.length > 0) {
+        const listText = transactions.map((t) => {
+            const dateStr = format(new Date(t.date), 'dd/MM');
+            const sign = t.type === 'EXPENSE' ? '-' : '+';
+            const cat = t.category?.name ? ` (${t.category.name})` : '';
+            const desc = t.description ? ` - ${t.description}` : '';
+            return `• ${dateStr}${desc}${cat}: ${sign}${money(Number(t.amount))}`;
+        }).join('\n');
+        
+        reply = `Encontré ${transactions.length} transacciones por un total de ${money(total)}:\n${listText}`;
+    }
+
     return json({
         success: true,
         data: {
@@ -305,7 +318,7 @@ async function handleSearchTransactions(payload: Record<string, unknown>) {
             totalAmount: total,
             totalFound: transactions.length
         },
-        reply: `Encontre ${transactions.length} transacciones por ${money(total)}.`
+        reply
     });
 }
 

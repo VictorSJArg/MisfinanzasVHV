@@ -855,7 +855,7 @@ const workflow = {
       parameters: {
         resource: 'text',
         operation: 'message',
-        modelId: { __rl: true, value: 'gpt-4.1-mini', mode: 'list', cachedResultName: 'gpt-4.1-mini' },
+        modelId: { __rl: true, value: 'gpt-4o-mini', mode: 'list', cachedResultName: 'gpt-4o-mini' },
         messages: {
           values: [
             { content: systemPrompt, role: 'system' },
