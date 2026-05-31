@@ -158,11 +158,27 @@ async function resolveCategoryId(userId: string, type: string, payload: Record<s
 
     if (!asBoolean(payload.createMissingCategory)) return null;
 
+    let parentId: string | null = null;
+    const parentCategoryName = asString(payload.parentCategoryName || payload.parentCategory);
+    if (parentCategoryName) {
+        const parentCat = await prisma.category.findFirst({
+            where: {
+                userId,
+                type,
+                name: { equals: parentCategoryName, mode: 'insensitive' }
+            }
+        });
+        if (parentCat) {
+            parentId = parentCat.id;
+        }
+    }
+
     const category = await prisma.category.create({
         data: {
             name: categoryName,
             type,
-            userId
+            userId,
+            parentId
         }
     });
 
@@ -442,6 +458,7 @@ async function handleCreateTransactionsBulk(payload: Record<string, unknown>, co
                 const accountId = await resolveAccountId(user.id, payload);
                 const categoryId = await resolveCategoryId(user.id, item.type, {
                     categoryName: item.categoryName,
+                    parentCategoryName: payload.parentCategoryName || payload.parentCategory,
                     createMissingCategory: payload.createMissingCategory
                 });
 
