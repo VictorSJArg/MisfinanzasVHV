@@ -356,6 +356,19 @@ const executeAssistantCode = `function money(value) {
 
 function confirmationText(payload, appPreview) {
   const preview = appPreview || payload || {};
+  if (preview.count && preview.transactions) {
+    const type = preview.type === 'INCOME' ? 'ingresos' : 'gastos';
+    const list = preview.transactions.map((t) => {
+      const d = t.date ? t.date.split('T')[0] : '';
+      return \`• \${d}: \${money(t.amount)}\${t.description ? \` - \${t.description}\` : ''}\`;
+    }).join('\\n');
+    return [
+      \`Confirmo la carga de \${preview.count} \${type} por un total de \${money(preview.totalAmount)}?\`,
+      list,
+      '',
+      'Respondé SI para confirmar o NO para cancelar.'
+    ].filter(Boolean).join('\\n');
+  }
   const type = preview.type === 'INCOME' ? 'ingreso' : 'gasto';
   return [
     \`Confirmo \${type}\${preview.amount ? \` de \${money(preview.amount)}\` : ''}?\`,

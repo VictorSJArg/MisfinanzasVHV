@@ -7,7 +7,8 @@ import { prisma } from '@/lib/prisma';
 import {
     createTransactionWithBalance,
     deleteTransactionWithBalance,
-    updateTransactionWithBalance
+    updateTransactionWithBalance,
+    balanceMultiplier
 } from '@/lib/transactions';
 
 export const dynamic = 'force-dynamic';
@@ -19,6 +20,7 @@ type AssistantAction =
     | 'search_transactions'
     | 'confirm'
     | 'create_transaction'
+    | 'create_transactions_bulk'
     | 'update_transaction'
     | 'delete_transaction'
     | 'credit_cards'
@@ -371,6 +373,112 @@ async function handleCreateTransaction(payload: Record<string, unknown>, confirm
     });
 }
 
+interface ParsedBulkTransaction {
+    amount: number;
+    type: 'INCOME' | 'EXPENSE';
+    date: string;
+    description: string;
+    categoryName: string;
+    status: string;
+}
+
+async function handleCreateTransactionsBulk(payload: Record<string, unknown>, confirmed: boolean, phone: string) {
+    const rawTransactions = payload.transactions as Record<string, unknown>[] | undefined;
+    if (!rawTransactions || !Array.isArray(rawTransactions) || rawTransactions.length === 0) {
+        return json({ success: false, error: 'transactions array is required' }, 400);
+    }
+
+    const parsedTransactions: ParsedBulkTransaction[] = [];
+    let totalAmount = 0;
+
+    for (const tx of rawTransactions) {
+        const amount = asNumber(tx.amount);
+        const type = (asString(tx.type || tx.transactionType).toUpperCase() || 'EXPENSE') as 'INCOME' | 'EXPENSE';
+        const date = asString(tx.date) || new Date().toISOString();
+        const description = asString(tx.description);
+        const categoryName = asString(tx.categoryName || tx.category);
+
+        if (!amount || amount <= 0) {
+            return json({ success: false, error: 'amount is required and must be greater than zero for all transactions' }, 400);
+        }
+        totalAmount += amount;
+
+        parsedTransactions.push({
+            amount,
+            type,
+            date,
+            description,
+            categoryName,
+            status: asString(tx.status) || 'PAID'
+        });
+    }
+
+    const typeLabel = parsedTransactions[0].type === 'INCOME' ? 'ingresos' : 'gastos';
+
+    const preview = {
+        totalAmount,
+        type: parsedTransactions[0].type,
+        count: parsedTransactions.length,
+        transactions: parsedTransactions
+    };
+
+    if (!confirmed) {
+        await saveAssistantSession(phone, 'create_transactions_bulk', payload);
+        return json({
+            success: false,
+            requiresConfirmation: true,
+            action: 'create_transactions_bulk',
+            preview,
+            reply: `Necesito confirmacion para cargar ${parsedTransactions.length} ${typeLabel} por un total de ${money(totalAmount)}.`
+        }, 409);
+    }
+
+    const user = await getDefaultUser();
+    
+    try {
+        const created = await prisma.$transaction(async (tx) => {
+            const results = [];
+            for (const item of parsedTransactions) {
+                const accountId = await resolveAccountId(user.id, payload);
+                const categoryId = await resolveCategoryId(user.id, item.type, {
+                    categoryName: item.categoryName,
+                    createMissingCategory: payload.createMissingCategory
+                });
+
+                const createdTx = await tx.transaction.create({
+                    data: {
+                        amount: item.amount,
+                        date: new Date(item.date),
+                        type: item.type,
+                        description: item.description || null,
+                        categoryId,
+                        accountId,
+                        userId: user.id,
+                        status: item.status
+                    }
+                });
+
+                await tx.account.update({
+                    where: { id: accountId },
+                    data: { balance: { increment: item.amount * balanceMultiplier(item.type) } }
+                });
+
+                results.push(createdTx);
+            }
+            return results;
+        });
+
+        return json({
+            success: true,
+            data: { transactions: created },
+            reply: `Listo. Cargue ${created.length} ${typeLabel} por un total de ${money(totalAmount)}.`
+        });
+    } catch (e) {
+        console.error('Error creating bulk transactions:', e);
+        return json({ success: false, error: errorMessage(e) }, 500);
+    }
+}
+
 async function handleUpdateTransaction(payload: Record<string, unknown>, confirmed: boolean, phone: string) {
     const id = asString(payload.id || payload.transactionId);
     if (!id) return json({ success: false, error: 'transaction id is required' }, 400);
@@ -520,6 +628,8 @@ async function handleConfirm(payload: Record<string, unknown>, phone: string) {
             await appendToAssistantHistory(phone, 'user', text);
             if (session.action === 'create_transaction') {
                 response = await handleCreateTransaction(session.payload as Record<string, unknown>, true, phone);
+            } else if (session.action === 'create_transactions_bulk') {
+                response = await handleCreateTransactionsBulk(session.payload as Record<string, unknown>, true, phone);
             } else if (session.action === 'update_transaction') {
                 response = await handleUpdateTransaction(session.payload as Record<string, unknown>, true, phone);
             } else if (session.action === 'delete_transaction') {
@@ -591,6 +701,8 @@ export async function POST(request: NextRequest) {
                 return handleConfirm(payload, sourcePhone);
             case 'create_transaction':
                 return handleCreateTransaction(payload, body.confirmed === true, sourcePhone);
+            case 'create_transactions_bulk':
+                return handleCreateTransactionsBulk(payload, body.confirmed === true, sourcePhone);
             case 'update_transaction':
                 return handleUpdateTransaction(payload, body.confirmed === true, sourcePhone);
             case 'delete_transaction':
