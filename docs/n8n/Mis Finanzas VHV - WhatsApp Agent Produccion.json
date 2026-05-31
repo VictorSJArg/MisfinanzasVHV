@@ -8,38 +8,40 @@
         "width": 560,
         "color": 4
       },
-      "id": "2f68b4a1-9969-4ccb-8a1f-a8a72a4c3e38",
+      "id": "8d3f8c5d-8d21-4f5d-8d82-0a0f74a3a1b1",
       "name": "Notas de configuracion",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        16832,
-        2704
+        -960,
+        -1540
       ]
     },
     {
       "parameters": {
-        "options": {}
+        "options": {
+          "title": "Asistente de Finanzas VHV",
+          "subtitle": "Prueba tu agente aquí"
+        }
       },
-      "id": "058ebe2b-5813-4c4c-be79-7f14c14cf92b",
+      "id": "a0000000-b000-c000-d000-000000000004",
       "name": "Chat Trigger",
       "type": "@n8n/n8n-nodes-langchain.chatTrigger",
       "typeVersion": 1,
       "position": [
-        16512,
-        3168
-      ],
-      "webhookId": "73be12e7-31ea-4aad-ad1d-901337ee32ad"
+        -1280,
+        -1080
+      ]
     },
     {
       "parameters": {},
-      "id": "545b459e-9ca7-4d35-9de5-c629716ca515",
+      "id": "a0000000-b000-c000-d000-000000000001",
       "name": "Manual Trigger",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
       "position": [
-        16352,
-        3488
+        -1440,
+        -760
       ]
     },
     {
@@ -74,13 +76,13 @@
         },
         "options": {}
       },
-      "id": "7164b061-2aa3-4bee-a3ef-e7a4d4dc6d02",
+      "id": "a0000000-b000-c000-d000-000000000002",
       "name": "Config de Prueba",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        16592,
-        3488
+        -1200,
+        -760
       ]
     },
     {
@@ -89,13 +91,13 @@
         "path": "mis-finanzas-whatsapp-agent",
         "options": {}
       },
-      "id": "f859dc23-bbdc-4d05-8b24-dd49fa17d865",
+      "id": "58cfd7e7-bc9e-4b44-bc20-3c7e47ad8d47",
       "name": "Webhook1",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        16512,
-        3328
+        -1280,
+        -920
       ],
       "webhookId": "mis-finanzas-whatsapp-agent"
     },
@@ -106,19 +108,19 @@
             {
               "id": "cfg-1",
               "name": "APP_BASE_URL",
-              "value": "https://misfinanzasvhv.vercel.app",
+              "value": "COMPLETAR_URL_PUBLICA_DE_LA_APP",
               "type": "string"
             },
             {
               "id": "cfg-2",
               "name": "ASSISTANT_WEBHOOK_SECRET",
-              "value": "Yoli2015",
+              "value": "COMPLETAR_TOKEN_COMPARTIDO_CON_LA_APP",
               "type": "string"
             },
             {
               "id": "cfg-3",
               "name": "ASSISTANT_ALLOWED_PHONE",
-              "value": "5492645271951",
+              "value": "COMPLETAR_NUMERO_WHATSAPP_SOLO_DIGITOS",
               "type": "string"
             },
             {
@@ -130,45 +132,46 @@
             {
               "id": "cfg-5",
               "name": "EVOLUTION_BASE_URL",
-              "value": "https://vhvevolution.canela.life",
+              "value": "",
               "type": "string"
             },
             {
               "id": "cfg-6",
               "name": "EVOLUTION_INSTANCE",
-              "value": "vallejosvictor002",
+              "value": "",
               "type": "string"
             },
             {
               "id": "cfg-7",
               "name": "EVOLUTION_API_KEY",
-              "value": "=CF5F5982685B-4C8C-8436-74DB7805B605",
+              "value": "",
               "type": "string"
             }
           ]
         },
         "options": {}
       },
-      "id": "b6b85992-ec40-4643-acd2-84673ce31988",
+      "id": "7c8ce1e3-7dd5-4019-92a4-c73a976f29ef",
       "name": "Config",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        16752,
-        3328
+        -1040,
+        -920
       ]
     },
     {
       "parameters": {
+        "mode": "runOnceForAllItems",
         "jsCode": "function normalizePhone(value) {\n  return String(value || '').replace(/[^\\d]/g, '');\n}\n\nfunction textFromMessage(message, fallbackText) {\n  return String(\n    message?.conversation ||\n    message?.extendedTextMessage?.text ||\n    message?.imageMessage?.caption ||\n    message?.videoMessage?.caption ||\n    message?.documentMessage?.caption ||\n    fallbackText ||\n    ''\n  ).trim();\n}\n\nfunction detectMessageType(data, message, fallbackType) {\n  if (fallbackType) return fallbackType;\n  if (data?.messageType) return data.messageType;\n  if (message?.conversation) return 'conversation';\n  if (message?.extendedTextMessage) return 'extendedTextMessage';\n  if (message?.audioMessage) return 'audioMessage';\n  if (message?.imageMessage) return 'imageMessage';\n  if (message?.videoMessage) return 'videoMessage';\n  if (message?.documentMessage) return 'documentMessage';\n  return 'conversation';\n}\n\nfunction routeFromMessageType(messageType, text) {\n  if (['conversation', 'extendedTextMessage'].includes(messageType)) return 'text';\n  if (messageType === 'audioMessage') return 'audio';\n  if (messageType === 'imageMessage') return 'image';\n  if (messageType === 'videoMessage') return 'video';\n  if (text) return 'text';\n  return 'unsupported';\n}\n\nlet triggerData = {};\ntry {\n  triggerData = $('Webhook1').item.json;\n} catch (e) {\n  triggerData = $json;\n}\n\nconst config = $json;\nconst body = triggerData.body || triggerData;\nconst data = body.data || body;\nconst key = data.key || {};\nconst message = data.message || {};\n\nconst allowedPhones = String(config.ASSISTANT_ALLOWED_PHONE || '').split(',').map(normalizePhone).filter(Boolean);\nconst isChatTrigger = !!(body.sessionId || body.chatInput);\n\nconst messageType = detectMessageType(data, message, body.messageType);\nconst text = textFromMessage(message, body.text || body.chatInput);\n\nconst remoteJid = key.remoteJid || data.remoteJid || body.remoteJid || body.replyNumber || '';\nconst sender = body.sender || data.sender || remoteJid || body.phone || '';\nconst isLid = String(remoteJid).includes('@lid');\nconst senderPhone = normalizePhone(sender);\nconst remotePhone = normalizePhone(String(remoteJid).replace('@s.whatsapp.net', '').replace('@c.us', '').replace('@lid', ''));\nconst phone = body.phone ? normalizePhone(body.phone) : (isLid && senderPhone ? senderPhone : remotePhone) || (isChatTrigger && allowedPhones[0] ? allowedPhones[0] : '') || '5491122334455';\nconst replyNumber = body.replyNumber || (isLid && senderPhone ? `${senderPhone}@s.whatsapp.net` : remoteJid) || (phone ? `${phone}@s.whatsapp.net` : '');\n\nconst mediaUrl = message.mediaUrl || data.mediaUrl || message.audioMessage?.url || message.imageMessage?.url || message.videoMessage?.url || body.mediaUrl || '';\nconst routeType = routeFromMessageType(messageType, text);\nconst fromMe = key.fromMe === true || body.fromMe === true;\nconst source = data.source || body.source || (isChatTrigger ? 'chat' : 'test');\n\nreturn [{\n  json: {\n    data: {\n      remoteJid,\n      replyNumber,\n      phone,\n      fromMe,\n      id: key.id || data.messageId || body.messageId || body.id || `test-${Date.now()}`,\n      messageType,\n      routeType,\n      text,\n      mediaUrl,\n      source\n    },\n    evolution: {\n      serverUrl: body.server_url || body.serverUrl || config.EVOLUTION_BASE_URL || '',\n      instance: body.instance || config.EVOLUTION_INSTANCE || '',\n      apiKey: body.apikey || body.apiKey || config.EVOLUTION_API_KEY || ''\n    },\n    authorized: allowedPhones.length === 0 || allowedPhones.includes(phone)\n  },\n  binary: $input.first()?.binary || {}\n}];"
       },
-      "id": "b4b33431-eb45-4c43-82ce-5d675f605255",
+      "id": "63b06e3e-f34e-45c3-9650-31fa2d7ee112",
       "name": "Normalizar Entrada",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        16992,
-        3328
+        -800,
+        -920
       ]
     },
     {
@@ -196,26 +199,27 @@
         },
         "options": {}
       },
-      "id": "e3faaac6-d566-45af-b612-7348f430aa60",
+      "id": "c7300e87-8054-442f-a4fa-e9e4beca4218",
       "name": "If From Me",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        17232,
-        3328
+        -560,
+        -920
       ]
     },
     {
       "parameters": {
-        "jsCode": "function normalize(value) {\n  return String(value || '').trim().toLowerCase();\n}\n\nconst requestJson = async ({ method = 'GET', url, headers = {}, body }) => {\n  try {\n    const response = await this.helpers.httpRequest({\n      method,\n      url,\n      headers,\n      body,\n      json: true\n    });\n    return { ok: true, status: 200, data: response };\n  } catch (error) {\n    const status = error.httpCode || (error.response && error.response.status) || 500;\n    let responseData = error.error;\n    if (!responseData && error.response) {\n      responseData = error.response.data || error.response.body;\n    }\n    if (!responseData) {\n      responseData = { message: error.message };\n    }\n    if (typeof responseData === 'string') {\n      try {\n        responseData = JSON.parse(responseData);\n      } catch (e) {\n        responseData = { raw: responseData };\n      }\n    }\n    return { ok: false, status, data: responseData };\n  }\n};\n\nasync function callFinanceApp(sourcePhone, assistantRequest, confirmed) {\n  const config = $('Config').first().json;\n  return requestJson({\n    method: 'POST',\n    url: `${String(config.APP_BASE_URL || '').replace(/\\/$/, '')}/api/assistant`,\n    headers: { Authorization: `Bearer ${config.ASSISTANT_WEBHOOK_SECRET}` },\n    body: {\n      sourcePhone,\n      action: assistantRequest.action,\n      payload: assistantRequest.payload || {},\n      confirmed\n    }\n  });\n}\n\nconst item = $json;\nconst staticData = $getWorkflowStaticData('global');\nstaticData.pendingConfirmations ||= {};\nstaticData.processedMessageIds ||= {};\n\nconst messageId = item.data.id;\nif (messageId && staticData.processedMessageIds[messageId]) {\n  return [{ json: { ...item, shouldContinue: false, shouldSend: false, duplicate: true } }];\n}\nif (messageId) staticData.processedMessageIds[messageId] = Date.now();\n\nfor (const [id, ts] of Object.entries(staticData.processedMessageIds)) {\n  if (Number(ts) < Date.now() - 24 * 60 * 60 * 1000) delete staticData.processedMessageIds[id];\n}\nfor (const [phone, pending] of Object.entries(staticData.pendingConfirmations)) {\n  if (!pending?.expiresAt || Date.now() > pending.expiresAt) delete staticData.pendingConfirmations[phone];\n}\n\nif (!item.authorized) {\n  return [{ json: { ...item, shouldContinue: false, shouldSend: false, ignored: true, reason: 'phone_not_allowed' } }];\n}\n\nconst pending = staticData.pendingConfirmations[item.data.phone];\nconst text = normalize(item.data.text);\nconst yes = ['si', 'sí', 'confirmo', 'confirmar', 'ok', 'dale', 'guardar', 'cargar'];\nconst no = ['no', 'cancelar', 'cancela', 'anular', 'descartar'];\n\nif (pending && yes.includes(text)) {\n  delete staticData.pendingConfirmations[item.data.phone];\n  const appResponse = await callFinanceApp(item.data.phone, pending.assistantRequest, true);\n  const replyText = appResponse.data?.reply || (appResponse.ok ? 'Listo. Acción confirmada.' : `No pude ejecutar: ${appResponse.data?.error || appResponse.status}`);\n  return [{ json: { ...item, shouldContinue: false, shouldSend: true, replyText, appResponse: appResponse.data } }];\n}\n\nif (pending && no.includes(text)) {\n  delete staticData.pendingConfirmations[item.data.phone];\n  return [{ json: { ...item, shouldContinue: false, shouldSend: true, replyText: 'Cancelado. No hice cambios.' } }];\n}\n\nreturn [{ json: { ...item, shouldContinue: true, shouldSend: false } }];"
+        "mode": "runOnceForAllItems",
+        "jsCode": "function normalize(value) {\n  return String(value || '').trim().toLowerCase();\n}\n\nconst requestJson = async ({ method = 'GET', url, headers = {}, body }) => {\n  try {\n    const response = await this.helpers.httpRequest({\n      method,\n      url,\n      headers,\n      body,\n      json: true\n    });\n    return { ok: true, status: 200, data: response };\n  } catch (error) {\n    const status = error.httpCode || (error.response && error.response.status) || 500;\n    let responseData = error.error;\n    if (!responseData && error.response) {\n      responseData = error.response.data || error.response.body;\n    }\n    if (!responseData) {\n      responseData = { message: error.message };\n    }\n    if (typeof responseData === 'string') {\n      try {\n        responseData = JSON.parse(responseData);\n      } catch (e) {\n        responseData = { raw: responseData };\n      }\n    }\n    return { ok: false, status, data: responseData };\n  }\n};\n\nconst item = $json;\nconst staticData = $getWorkflowStaticData('global');\nstaticData.processedMessageIds ||= {};\n\nconst messageId = item.data.id;\nif (messageId && staticData.processedMessageIds[messageId]) {\n  return [{ json: { ...item, shouldContinue: false, shouldSend: false, duplicate: true } }];\n}\nif (messageId) staticData.processedMessageIds[messageId] = Date.now();\n\nfor (const [id, ts] of Object.entries(staticData.processedMessageIds)) {\n  if (Number(ts) < Date.now() - 24 * 60 * 60 * 1000) delete staticData.processedMessageIds[id];\n}\n\nif (!item.authorized) {\n  return [{ json: { ...item, shouldContinue: false, shouldSend: false, ignored: true, reason: 'phone_not_allowed' } }];\n}\n\nconst config = $('Config').first().json;\nconst appResponse = await requestJson({\n  method: 'POST',\n  url: `${String(config.APP_BASE_URL || '').replace(/\\/$/, '')}/api/assistant`,\n  headers: { Authorization: `Bearer ${config.ASSISTANT_WEBHOOK_SECRET}` },\n  body: {\n    sourcePhone: item.data.phone,\n    action: 'confirm',\n    payload: {\n      text: item.data.text\n    }\n  }\n});\n\nif (appResponse.ok && appResponse.data?.processed === true) {\n  return [{\n    json: {\n      ...item,\n      shouldContinue: false,\n      shouldSend: true,\n      replyText: appResponse.data.reply,\n      appResponse: appResponse.data\n    }\n  }];\n}\n\nreturn [{ json: { ...item, shouldContinue: true, shouldSend: false } }];"
       },
-      "id": "46aa19a6-fffc-435b-86da-10691ed74be9",
+      "id": "ab44c062-59a0-46ef-b69e-a9e85e5d3798",
       "name": "Router Confirmaciones",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        17472,
-        3408
+        -320,
+        -840
       ]
     },
     {
@@ -243,13 +247,13 @@
         },
         "options": {}
       },
-      "id": "cba9814e-254c-4590-aeb5-bcd7fd3da68d",
+      "id": "ae0358a9-b606-46e5-89a6-d2afd40176c2",
       "name": "If Continuar",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        17712,
-        3408
+        -80,
+        -840
       ]
     },
     {
@@ -385,26 +389,27 @@
         },
         "options": {}
       },
-      "id": "74d4c10f-9adb-499e-b4e0-1235a29fb346",
+      "id": "d2f995e2-35f5-4bca-94d2-eed8d389fcf3",
       "name": "Message Type",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
       "position": [
-        17984,
-        3312
+        180,
+        -940
       ]
     },
     {
       "parameters": {
+        "mode": "runOnceForAllItems",
         "jsCode": "return [{\n  json: {\n    ...$json,\n    source: 'text',\n    normalizedInput: $json.data.text\n  }\n}];"
       },
-      "id": "cd44eaac-ce43-4f05-bbbf-40ca4876d00e",
+      "id": "ffbe2d7c-0cf0-4499-b2aa-590221c8b214",
       "name": "Preparar Texto",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        18272,
-        3056
+        480,
+        -1200
       ]
     },
     {
@@ -432,13 +437,13 @@
         },
         "options": {}
       },
-      "id": "24ef7178-8863-48a8-8e7d-374ff5aee65d",
+      "id": "a0000000-b000-c000-d000-000000000006",
       "name": "If Has Audio URL",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        18272,
-        3248
+        480,
+        -1000
       ]
     },
     {
@@ -446,13 +451,13 @@
         "url": "={{ $json.data.mediaUrl }}",
         "options": {}
       },
-      "id": "162da2ca-d7d6-46ce-88b9-4e9330e31cda",
+      "id": "e3b450cb-4280-4d1a-9f29-1b84e29cb932",
       "name": "Get Audio",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        18512,
-        3184
+        720,
+        -1060
       ]
     },
     {
@@ -463,13 +468,13 @@
           "language": "es"
         }
       },
-      "id": "b5bb4e87-ad3d-403d-acf4-4299a1e38a53",
+      "id": "9e3e1120-896b-4a02-a72e-c7afc6243d55",
       "name": "OpenAI Transcribe Audio",
       "type": "@n8n/n8n-nodes-langchain.openAi",
       "typeVersion": 1.7,
       "position": [
-        18752,
-        3248
+        960,
+        -1000
       ],
       "credentials": {
         "openAiApi": {
@@ -480,15 +485,16 @@
     },
     {
       "parameters": {
+        "mode": "runOnceForAllItems",
         "jsCode": "const base = $('Router Confirmaciones').item.json;\nreturn [{\n  json: {\n    ...base,\n    source: 'audio',\n    normalizedInput: `Transcripción de audio: ${$json.text || ''}`.trim()\n  }\n}];"
       },
-      "id": "81c09370-072b-4fc2-94e7-4c30cec11cba",
+      "id": "ff44c22e-30b1-46fb-8295-558e1e693d1c",
       "name": "Preparar Audio",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        18992,
-        3248
+        1200,
+        -1000
       ]
     },
     {
@@ -516,13 +522,13 @@
         },
         "options": {}
       },
-      "id": "e8b825c9-34f2-442e-84c0-39e023c40da8",
+      "id": "a0000000-b000-c000-d000-000000000007",
       "name": "If Has Image URL",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        18272,
-        3456
+        480,
+        -800
       ]
     },
     {
@@ -530,13 +536,13 @@
         "url": "={{ $json.data.mediaUrl }}",
         "options": {}
       },
-      "id": "d7158cc1-f72d-4398-aaf5-3828bf3fb9c0",
+      "id": "a0000000-b000-c000-d000-000000000008",
       "name": "Get Image",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        18512,
-        3392
+        720,
+        -860
       ]
     },
     {
@@ -550,18 +556,20 @@
           "cachedResultName": "GPT-4O-MINI"
         },
         "text": "Extraé los datos financieros visibles del comprobante o imagen: comercio, fecha, monto total, moneda, rubro probable y cualquier detalle útil. Si no hay comprobante claro, describí brevemente la imagen.",
+        "imageInputType": "binary",
+        "binaryPropertyName": "data",
         "options": {
           "detail": "auto",
           "maxTokens": 500
         }
       },
-      "id": "8d80884c-9c84-4831-97f9-3b9ec67b7d57",
+      "id": "0c2623a2-6ab1-412e-84e6-392be6d9904c",
       "name": "OpenAI Analizar Imagen",
       "type": "@n8n/n8n-nodes-langchain.openAi",
       "typeVersion": 1.7,
       "position": [
-        18752,
-        3456
+        960,
+        -800
       ],
       "credentials": {
         "openAiApi": {
@@ -572,41 +580,44 @@
     },
     {
       "parameters": {
+        "mode": "runOnceForAllItems",
         "jsCode": "const base = $('Router Confirmaciones').item.json;\nconst imageText = $json.content || $json.message?.content || '';\nconst caption = base.data.text ? `Texto/caption enviado por el usuario: ${base.data.text}\\n\\n` : '';\nreturn [{\n  json: {\n    ...base,\n    source: 'image',\n    normalizedInput: `${caption}Análisis de imagen/comprobante: ${imageText}`.trim()\n  }\n}];"
       },
-      "id": "438e7a2b-5a75-433b-aea4-7ad70e2c7c6b",
+      "id": "20e4d9a0-669b-4fd9-8b6f-80d6129d4ab7",
       "name": "Preparar Imagen",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        18992,
-        3456
+        1200,
+        -800
       ]
     },
     {
       "parameters": {
+        "mode": "runOnceForAllItems",
         "jsCode": "const type = $json.data?.messageType || 'desconocido';\nconst replyText = type === 'videoMessage'\n  ? 'Por ahora no proceso videos. Mandame texto, audio o una foto del comprobante y lo cargo.'\n  : 'Por ahora solo proceso texto, audio e imágenes. Mandame el gasto o ingreso en alguno de esos formatos.';\nreturn [{ json: { ...$json, shouldContinue: false, shouldSend: true, replyText } }];"
       },
-      "id": "dbd521d2-dc5b-4778-ba87-69d3e2b8d846",
+      "id": "69f102c4-0f7c-4e90-999d-fde035da7f07",
       "name": "Video o No Soportado",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        18272,
-        3648
+        480,
+        -600
       ]
     },
     {
       "parameters": {
+        "mode": "runOnceForAllItems",
         "jsCode": "const requestJson = async ({ method = 'GET', url, headers = {}, body }) => {\n  try {\n    const response = await this.helpers.httpRequest({\n      method,\n      url,\n      headers,\n      body,\n      json: true\n    });\n    return { ok: true, status: 200, data: response };\n  } catch (error) {\n    const status = error.httpCode || (error.response && error.response.status) || 500;\n    let responseData = error.error;\n    if (!responseData && error.response) {\n      responseData = error.response.data || error.response.body;\n    }\n    if (!responseData) {\n      responseData = { message: error.message };\n    }\n    if (typeof responseData === 'string') {\n      try {\n        responseData = JSON.parse(responseData);\n      } catch (e) {\n        responseData = { raw: responseData };\n      }\n    }\n    return { ok: false, status, data: responseData };\n  }\n};\n\nfunction todayArgentina() {\n  return new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Argentina/Buenos_Aires' });\n}\n\nconst config = $('Config').first().json;\nconst item = $json;\nconst metadata = await requestJson({\n  method: 'POST',\n  url: `${String(config.APP_BASE_URL || '').replace(/\\/$/, '')}/api/assistant`,\n  headers: { Authorization: `Bearer ${config.ASSISTANT_WEBHOOK_SECRET}` },\n  body: {\n    sourcePhone: item.data.phone,\n    action: 'metadata',\n    payload: {},\n    confirmed: false\n  }\n});\n\nif (!metadata.ok) {\n  return [{\n    json: {\n      ...item,\n      shouldUseOpenAI: false,\n      shouldSend: true,\n      replyText: `No pude leer categorías/cuentas desde la app: ${metadata.data?.error || metadata.status}`\n    }\n  }];\n}\n\nconst agentInput = {\n  message: item.normalizedInput,\n  source: item.source,\n  context: {\n    today: todayArgentina(),\n    phone: item.data.phone,\n    defaultAccountName: config.DEFAULT_ACCOUNT_NAME || 'Efectivo',\n    categories: metadata.data?.data?.categories || [],\n    accounts: metadata.data?.data?.accounts || []\n  }\n};\n\nreturn [{\n  json: {\n    ...item,\n    shouldUseOpenAI: true,\n    agentPrompt: JSON.stringify(agentInput)\n  }\n}];"
       },
-      "id": "79ed7c66-bc3d-478a-b6e3-76c14bb69b81",
+      "id": "266fa105-5f67-46e8-b8fd-e74715228b65",
       "name": "Preparar Prompt Finanzas",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        19232,
-        3248
+        1440,
+        -1000
       ]
     },
     {
@@ -634,17 +645,19 @@
         },
         "options": {}
       },
-      "id": "06a9288b-a093-429b-995c-1148f67a3a1f",
+      "id": "313e6a5c-2f05-4751-9c17-63fab27382ac",
       "name": "If Usar OpenAI",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        19472,
-        3248
+        1680,
+        -1000
       ]
     },
     {
       "parameters": {
+        "resource": "text",
+        "operation": "message",
         "modelId": {
           "__rl": true,
           "value": "gpt-4.1-mini",
@@ -654,27 +667,29 @@
         "messages": {
           "values": [
             {
-              "content": "=# System Prompt - Agente Finanzas VHV\n\nSos el agente financiero personal de Victor. Tu canal es WhatsApp por n8n + Evolution API.\n\nTu tarea es interpretar mensajes de texto, transcripciones de audio o texto extraido de imagenes para consultar o modificar la app de finanzas personales.\n\nRespondé exclusivamente con JSON valido. No agregues Markdown ni explicaciones fuera del JSON.\n\n## Fecha y zona horaria\n\nLa fecha actual la recibis en `context.today` con formato `YYYY-MM-DD`.\nLa zona horaria es `America/Argentina/Buenos_Aires`.\n\nInterpretá:\n\n- \"hoy\" como `context.today`.\n- \"ayer\" como el dia anterior.\n- fechas como `17/5`, `17-05`, `17 de mayo`, `mayo 2026`.\n- si falta el año, usá el año de `context.today`.\n\n## Datos disponibles\n\nRecibis:\n\n```json\n{\n  \"message\": \"texto normalizado del usuario\",\n  \"source\": \"text | audio | image\",\n  \"context\": {\n    \"today\": \"YYYY-MM-DD\",\n    \"phone\": \"549...\",\n    \"categories\": [\n      { \"id\": \"...\", \"name\": \"Alimentos\", \"type\": \"EXPENSE\" }\n    ],\n    \"accounts\": [\n      { \"id\": \"...\", \"name\": \"Efectivo\", \"type\": \"CASH\" }\n    ]\n  },\n  \"media\": {\n    \"ocrText\": \"texto extraido si vino de imagen\",\n    \"transcript\": \"texto si vino de audio\"\n  }\n}\n```\n\n## Acciones permitidas\n\nTu salida debe tener esta forma:\n\n```json\n{\n  \"intent\": \"create_transaction | summary | search_transactions | update_transaction | delete_transaction | credit_cards | clarification | unsupported\",\n  \"confidence\": 0.0,\n  \"assistantRequest\": {\n    \"action\": \"create_transaction\",\n    \"confirmed\": false,\n    \"payload\": {}\n  },\n  \"reply\": \"texto breve para enviar por WhatsApp\",\n  \"needsConfirmation\": true,\n  \"missingFields\": []\n}\n```\n\n`assistantRequest.action` debe ser una de:\n\n- `metadata`\n- `summary`\n- `search_transactions`\n- `create_transaction`\n- `update_transaction`\n- `delete_transaction`\n- `credit_cards`\n\n## Carga de gastos e ingresos\n\nPara gastos:\n\n```json\n{\n  \"intent\": \"create_transaction\",\n  \"confidence\": 0.92,\n  \"assistantRequest\": {\n    \"action\": \"create_transaction\",\n    \"confirmed\": false,\n    \"payload\": {\n      \"amount\": 12500,\n      \"type\": \"EXPENSE\",\n      \"date\": \"2026-05-30\",\n      \"description\": \"Supermercado\",\n      \"categoryName\": \"Alimentos\",\n      \"accountName\": \"Efectivo\",\n      \"status\": \"PAID\",\n      \"createMissingCategory\": false\n    }\n  },\n  \"reply\": \"Voy a cargar un gasto de $12.500 en Alimentos, descripcion Supermercado, fecha 30/05/2026. Responde SI para confirmar.\",\n  \"needsConfirmation\": true,\n  \"missingFields\": []\n}\n```\n\nPara ingresos usá `type: \"INCOME\"`.\n\nCampos obligatorios para crear:\n\n- `amount`\n- `type`\n- `date`\n- `description` o una descripcion razonable derivada\n- `categoryName` si hay categoria probable\n\nSi falta monto, fecha o tipo, devolver `intent: \"clarification\"`.\n\n## Categorias\n\nUsá siempre categorias existentes de `context.categories` si hay coincidencia razonable.\n\nNo inventes categorias salvo que el usuario pida explicitamente crear una nueva. Por defecto:\n\n```json\n\"createMissingCategory\": false\n```\n\nSi no estas seguro de la categoria, elegi la mas probable y bajá la confianza. Si la confianza es menor a `0.75`, pedí aclaracion.\n\nEjemplos de mapeo:\n\n- supermercado, almacen, comida: `Alimentos` si existe.\n- farmacia, medico: `Salud/Farmacia` o `Salud` si existe.\n- luz, gas, telefono, internet: `Servicios (Luz/Gas)` o categoria de servicios si existe.\n- combustible, nafta: `Combustible`.\n- prestamo, cuota banco: `Préstamos` si existe.\n\n## Imagenes\n\nCuando `source` sea `image`, interpretá `media.ocrText` como texto del comprobante.\n\nReglas:\n\n- Priorizar monto marcado como total.\n- Ignorar CUIT, numeros de ticket, autorizacion, tarjeta, comprobante.\n- Si aparecen varios importes y no hay total claro, devolver aclaracion.\n- Descripcion: comercio + dato breve, por ejemplo `Farmacia Central` o `Ticket supermercado`.\n\n## Audio\n\nCuando `source` sea `audio`, usá `media.transcript`.\n\nSi la transcripcion es dudosa, pedir confirmacion o aclaracion.\n\n## Consultas\n\nResumen:\n\n```json\n{\n  \"intent\": \"summary\",\n  \"confidence\": 0.9,\n  \"assistantRequest\": {\n    \"action\": \"summary\",\n    \"confirmed\": false,\n    \"payload\": { \"month\": 5, \"year\": 2026 }\n  },\n  \"reply\": \"\",\n  \"needsConfirmation\": false,\n  \"missingFields\": []\n}\n```\n\nBusqueda:\n\n```json\n{\n  \"intent\": \"search_transactions\",\n  \"confidence\": 0.9,\n  \"assistantRequest\": {\n    \"action\": \"search_transactions\",\n    \"confirmed\": false,\n    \"payload\": {\n      \"query\": \"telefono\",\n      \"type\": \"EXPENSE\",\n      \"startDate\": \"2026-05-01\",\n      \"endDate\": \"2026-05-31\",\n      \"limit\": 10\n    }\n  },\n  \"reply\": \"\",\n  \"needsConfirmation\": false,\n  \"missingFields\": []\n}\n```\n\n## Edicion y borrado\n\nPara editar o borrar, si el usuario no da un `transactionId`, primero buscá movimientos con `search_transactions`.\n\nNo devuelvas `delete_transaction` si no hay un movimiento unico e inequivoco.\n\nSi hay varios candidatos, devolver `clarification` con una respuesta que pida elegir.\n\n## Estilo de respuesta\n\nEl campo `reply` debe ser corto, claro y natural para WhatsApp.\n\nPara mutaciones, siempre incluir:\n\n- tipo;\n- monto;\n- fecha;\n- categoria;\n- descripcion;\n- pedido de confirmacion.\n\nNo uses emojis en el JSON salvo que el usuario los haya usado y ayuden claramente.",
+              "content": "# System Prompt - Agente Finanzas VHV\n\nSos el agente financiero personal de Victor. Tu canal es WhatsApp por n8n + Evolution API.\n\nTu tarea es interpretar mensajes de texto, transcripciones de audio o texto extraido de imagenes para consultar o modificar la app de finanzas personales.\n\nRespondé exclusivamente con JSON valido. No agregues Markdown ni explicaciones fuera del JSON.\n\n## Fecha y zona horaria\n\nLa fecha actual la recibis en `context.today` con formato `YYYY-MM-DD`.\nLa zona horaria es `America/Argentina/Buenos_Aires`.\n\nInterpretá:\n\n- \"hoy\" como `context.today`.\n- \"ayer\" como el dia anterior.\n- fechas como `17/5`, `17-05`, `17 de mayo`, `mayo 2026`.\n- si falta el año, usá el año de `context.today`.\n\n## Datos disponibles\n\nRecibis:\n\n```json\n{\n  \"message\": \"texto normalizado del usuario\",\n  \"source\": \"text | audio | image\",\n  \"context\": {\n    \"today\": \"YYYY-MM-DD\",\n    \"phone\": \"549...\",\n    \"categories\": [\n      { \"id\": \"...\", \"name\": \"Alimentos\", \"type\": \"EXPENSE\" }\n    ],\n    \"accounts\": [\n      { \"id\": \"...\", \"name\": \"Efectivo\", \"type\": \"CASH\" }\n    ]\n  },\n  \"media\": {\n    \"ocrText\": \"texto extraido si vino de imagen\",\n    \"transcript\": \"texto si vino de audio\"\n  }\n}\n```\n\n## Acciones permitidas\n\nTu salida debe tener esta forma:\n\n```json\n{\n  \"intent\": \"create_transaction | summary | search_transactions | update_transaction | delete_transaction | credit_cards | clarification | unsupported\",\n  \"confidence\": 0.0,\n  \"assistantRequest\": {\n    \"action\": \"create_transaction\",\n    \"confirmed\": false,\n    \"payload\": {}\n  },\n  \"reply\": \"texto breve para enviar por WhatsApp\",\n  \"needsConfirmation\": true,\n  \"missingFields\": []\n}\n```\n\n`assistantRequest.action` debe ser una de:\n\n- `metadata`\n- `summary`\n- `search_transactions`\n- `create_transaction`\n- `update_transaction`\n- `delete_transaction`\n- `credit_cards`\n\n## Carga de gastos e ingresos\n\nPara gastos:\n\n```json\n{\n  \"intent\": \"create_transaction\",\n  \"confidence\": 0.92,\n  \"assistantRequest\": {\n    \"action\": \"create_transaction\",\n    \"confirmed\": false,\n    \"payload\": {\n      \"amount\": 12500,\n      \"type\": \"EXPENSE\",\n      \"date\": \"2026-05-30\",\n      \"description\": \"Supermercado\",\n      \"categoryName\": \"Alimentos\",\n      \"accountName\": \"Efectivo\",\n      \"status\": \"PAID\",\n      \"createMissingCategory\": false\n    }\n  },\n  \"reply\": \"Voy a cargar un gasto de $12.500 en Alimentos, descripcion Supermercado, fecha 30/05/2026. Responde SI para confirmar.\",\n  \"needsConfirmation\": true,\n  \"missingFields\": []\n}\n```\n\nPara ingresos usá `type: \"INCOME\"`.\n\nCampos obligatorios para crear:\n\n- `amount`\n- `type`\n- `date`\n- `description` o una descripcion razonable derivada\n- `categoryName` si hay categoria probable\n\nSi falta monto, fecha o tipo, devolver `intent: \"clarification\"`.\n\n## Categorias\n\nUsá siempre categorias existentes de `context.categories` si hay coincidencia razonable.\n\nNo inventes categorias salvo que el usuario pida explicitamente crear una nueva. Por defecto:\n\n```json\n\"createMissingCategory\": false\n```\n\nSi no estas seguro de la categoria, elegi la mas probable y bajá la confianza. Si la confianza es menor a `0.75`, pedí aclaracion.\n\nEjemplos de mapeo:\n\n- supermercado, almacen, comida: `Alimentos` si existe.\n- farmacia, medico: `Salud/Farmacia` o `Salud` si existe.\n- luz, gas, telefono, internet: `Servicios (Luz/Gas)` o categoria de servicios si existe.\n- combustible, nafta: `Combustible`.\n- prestamo, cuota banco: `Préstamos` si existe.\n\n## Imagenes\n\nCuando `source` sea `image`, interpretá `media.ocrText` como texto del comprobante.\n\nReglas:\n\n- Priorizar monto marcado como total.\n- Ignorar CUIT, numeros de ticket, autorizacion, tarjeta, comprobante.\n- Si aparecen varios importes y no hay total claro, devolver aclaracion.\n- Descripcion: comercio + dato breve, por ejemplo `Farmacia Central` o `Ticket supermercado`.\n\n## Audio\n\nCuando `source` sea `audio`, usá `media.transcript`.\n\nSi la transcripcion es dudosa, pedir confirmacion o aclaracion.\n\n## Consultas\n\nResumen:\n\n```json\n{\n  \"intent\": \"summary\",\n  \"confidence\": 0.9,\n  \"assistantRequest\": {\n    \"action\": \"summary\",\n    \"confirmed\": false,\n    \"payload\": { \"month\": 5, \"year\": 2026 }\n  },\n  \"reply\": \"\",\n  \"needsConfirmation\": false,\n  \"missingFields\": []\n}\n```\n\nBusqueda:\n\n```json\n{\n  \"intent\": \"search_transactions\",\n  \"confidence\": 0.9,\n  \"assistantRequest\": {\n    \"action\": \"search_transactions\",\n    \"confirmed\": false,\n    \"payload\": {\n      \"query\": \"telefono\",\n      \"type\": \"EXPENSE\",\n      \"startDate\": \"2026-05-01\",\n      \"endDate\": \"2026-05-31\",\n      \"limit\": 10\n    }\n  },\n  \"reply\": \"\",\n  \"needsConfirmation\": false,\n  \"missingFields\": []\n}\n```\n\n## Edicion y borrado\n\nPara editar o borrar, si el usuario no da un `transactionId`, primero buscá movimientos con `search_transactions`.\n\nNo devuelvas `delete_transaction` si no hay un movimiento unico e inequivoco.\n\nSi hay varios candidatos, devolver `clarification` con una respuesta que pida elegir.\n\n## Estilo de respuesta\n\nEl campo `reply` debe ser corto, claro y natural para WhatsApp.\n\nPara mutaciones, siempre incluir:\n\n- tipo;\n- monto;\n- fecha;\n- categoria;\n- descripcion;\n- pedido de confirmacion.\n\nNo uses emojis en el JSON salvo que el usuario los haya usado y ayuden claramente.",
               "role": "system"
             },
             {
-              "content": "={{ $json.agentPrompt }}"
+              "content": "={{ $json.agentPrompt }}",
+              "role": "user"
             }
           ]
         },
+        "simplify": true,
         "jsonOutput": true,
         "options": {
-          "maxTokens": 1200,
-          "temperature": 0
+          "temperature": 0,
+          "maxTokens": 1200
         }
       },
-      "id": "c29e2593-cae0-4ca0-ab8a-1a8bbb5041c2",
+      "id": "d699fe80-6cb6-4460-9bc5-d6d884e1d7d7",
       "name": "OpenAI Interpretar Pedido",
       "type": "@n8n/n8n-nodes-langchain.openAi",
       "typeVersion": 1.8,
       "position": [
-        19728,
-        3040
+        1920,
+        -1080
       ],
       "credentials": {
         "openAiApi": {
@@ -685,15 +700,16 @@
     },
     {
       "parameters": {
-        "jsCode": "function money(value) {\n  const number = Number(value || 0);\n  return `$${number.toLocaleString('es-AR', { maximumFractionDigits: 2 })}`;\n}\n\nfunction confirmationText(payload, appPreview) {\n  const preview = appPreview || payload || {};\n  const type = preview.type === 'INCOME' ? 'ingreso' : 'gasto';\n  return [\n    `Confirmo ${type}${preview.amount ? ` de ${money(preview.amount)}` : ''}?`,\n    preview.date ? `Fecha: ${preview.date}` : '',\n    preview.categoryName || preview.category ? `Categoría: ${preview.categoryName || preview.category}` : '',\n    preview.accountName ? `Cuenta: ${preview.accountName}` : '',\n    preview.description ? `Detalle: ${preview.description}` : '',\n    '',\n    'Respondé SI para confirmar o NO para cancelar.'\n  ].filter(Boolean).join('\\n');\n}\n\nconst requestJson = async ({ method = 'GET', url, headers = {}, body }) => {\n  try {\n    const response = await this.helpers.httpRequest({\n      method,\n      url,\n      headers,\n      body,\n      json: true\n    });\n    return { ok: true, status: 200, data: response };\n  } catch (error) {\n    const status = error.httpCode || (error.response && error.response.status) || 500;\n    let responseData = error.error;\n    if (!responseData && error.response) {\n      responseData = error.response.data || error.response.body;\n    }\n    if (!responseData) {\n      responseData = { message: error.message };\n    }\n    if (typeof responseData === 'string') {\n      try {\n        responseData = JSON.parse(responseData);\n      } catch (e) {\n        responseData = { raw: responseData };\n      }\n    }\n    return { ok: false, status, data: responseData };\n  }\n};\n\nconst base = $('Preparar Prompt Finanzas').item.json;\nconst config = $('Config').first().json;\nlet agentOutput = $json.message?.content || $json.content || $json;\nif (typeof agentOutput === 'string') {\n  try { agentOutput = JSON.parse(agentOutput); } catch {\n    return [{ json: { ...base, shouldSend: true, replyText: 'No pude interpretar la respuesta del modelo como JSON.' } }];\n  }\n}\n\nif (agentOutput.intent === 'clarification' || agentOutput.intent === 'unsupported') {\n  return [{ json: { ...base, shouldSend: true, replyText: agentOutput.reply || 'Necesito un dato más para avanzar.', agentOutput } }];\n}\n\nconst assistantRequest = agentOutput.assistantRequest || {};\nif (!assistantRequest.action) {\n  return [{ json: { ...base, shouldSend: true, replyText: agentOutput.reply || 'No pude convertir el pedido en una acción segura.', agentOutput } }];\n}\n\nconst appResponse = await requestJson({\n  method: 'POST',\n  url: `${String(config.APP_BASE_URL || '').replace(/\\/$/, '')}/api/assistant`,\n  headers: { Authorization: `Bearer ${config.ASSISTANT_WEBHOOK_SECRET}` },\n  body: {\n    sourcePhone: base.data.phone,\n    action: assistantRequest.action,\n    payload: assistantRequest.payload || {},\n    confirmed: assistantRequest.confirmed === true\n  }\n});\n\nconst requiresConfirmation = appResponse.status === 409 || appResponse.data?.requiresConfirmation === true;\nif (requiresConfirmation) {\n  const staticData = $getWorkflowStaticData('global');\n  staticData.pendingConfirmations ||= {};\n  staticData.pendingConfirmations[base.data.phone] = {\n    assistantRequest,\n    createdAt: Date.now(),\n    expiresAt: Date.now() + 10 * 60 * 1000\n  };\n  return [{\n    json: {\n      ...base,\n      shouldSend: true,\n      replyText: confirmationText(assistantRequest.payload, appResponse.data?.preview),\n      agentOutput,\n      appResponse: appResponse.data\n    }\n  }];\n}\n\nconst replyText = appResponse.data?.reply || agentOutput.reply || (appResponse.ok ? 'Listo.' : `No pude ejecutar: ${appResponse.data?.error || appResponse.status}`);\nreturn [{ json: { ...base, shouldSend: true, replyText, agentOutput, appResponse: appResponse.data } }];"
+        "mode": "runOnceForAllItems",
+        "jsCode": "function money(value) {\n  const number = Number(value || 0);\n  return `$${number.toLocaleString('es-AR', { maximumFractionDigits: 2 })}`;\n}\n\nfunction confirmationText(payload, appPreview) {\n  const preview = appPreview || payload || {};\n  const type = preview.type === 'INCOME' ? 'ingreso' : 'gasto';\n  return [\n    `Confirmo ${type}${preview.amount ? ` de ${money(preview.amount)}` : ''}?`,\n    preview.date ? `Fecha: ${preview.date}` : '',\n    preview.categoryName || preview.category ? `Categoría: ${preview.categoryName || preview.category}` : '',\n    preview.accountName ? `Cuenta: ${preview.accountName}` : '',\n    preview.description ? `Detalle: ${preview.description}` : '',\n    '',\n    'Respondé SI para confirmar o NO para cancelar.'\n  ].filter(Boolean).join('\\n');\n}\n\nconst requestJson = async ({ method = 'GET', url, headers = {}, body }) => {\n  try {\n    const response = await this.helpers.httpRequest({\n      method,\n      url,\n      headers,\n      body,\n      json: true\n    });\n    return { ok: true, status: 200, data: response };\n  } catch (error) {\n    const status = error.httpCode || (error.response && error.response.status) || 500;\n    let responseData = error.error;\n    if (!responseData && error.response) {\n      responseData = error.response.data || error.response.body;\n    }\n    if (!responseData) {\n      responseData = { message: error.message };\n    }\n    if (typeof responseData === 'string') {\n      try {\n        responseData = JSON.parse(responseData);\n      } catch (e) {\n        responseData = { raw: responseData };\n      }\n    }\n    return { ok: false, status, data: responseData };\n  }\n};\n\nconst base = $('Preparar Prompt Finanzas').item.json;\nconst config = $('Config').first().json;\nlet agentOutput = $json.message?.content || $json.content || $json;\nif (typeof agentOutput === 'string') {\n  try { agentOutput = JSON.parse(agentOutput); } catch {\n    return [{ json: { ...base, shouldSend: true, replyText: 'No pude interpretar la respuesta del modelo como JSON.' } }];\n  }\n}\n\nif (agentOutput.intent === 'clarification' || agentOutput.intent === 'unsupported') {\n  return [{ json: { ...base, shouldSend: true, replyText: agentOutput.reply || 'Necesito un dato más para avanzar.', agentOutput } }];\n}\n\nconst assistantRequest = agentOutput.assistantRequest || {};\nif (!assistantRequest.action) {\n  return [{ json: { ...base, shouldSend: true, replyText: agentOutput.reply || 'No pude convertir el pedido en una acción segura.', agentOutput } }];\n}\n\nconst appResponse = await requestJson({\n  method: 'POST',\n  url: `${String(config.APP_BASE_URL || '').replace(/\\/$/, '')}/api/assistant`,\n  headers: { Authorization: `Bearer ${config.ASSISTANT_WEBHOOK_SECRET}` },\n  body: {\n    sourcePhone: base.data.phone,\n    action: assistantRequest.action,\n    payload: assistantRequest.payload || {},\n    confirmed: assistantRequest.confirmed === true\n  }\n});\n\nconst requiresConfirmation = appResponse.status === 409 || appResponse.data?.requiresConfirmation === true;\nif (requiresConfirmation) {\n  return [{\n    json: {\n      ...base,\n      shouldSend: true,\n      replyText: confirmationText(assistantRequest.payload, appResponse.data?.preview),\n      agentOutput,\n      appResponse: appResponse.data\n    }\n  }];\n}\n\nconst replyText = appResponse.data?.reply || agentOutput.reply || (appResponse.ok ? 'Listo.' : `No pude ejecutar: ${appResponse.data?.error || appResponse.status}`);\nreturn [{ json: { ...base, shouldSend: true, replyText, agentOutput, appResponse: appResponse.data } }];"
       },
-      "id": "acba0612-fb92-43af-909e-e1b04c37a057",
+      "id": "bc40a7f8-c780-4559-bf7f-93504d7b0f14",
       "name": "Ejecutar Solicitud App",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        20096,
-        3072
+        2160,
+        -1080
       ]
     },
     {
@@ -721,39 +737,40 @@
         },
         "options": {}
       },
-      "id": "fb490867-7196-44a1-ac45-623f2449b6dd",
+      "id": "d2b929c4-3f9e-4567-973a-b387c8708eee",
       "name": "If Enviar Respuesta",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        20112,
-        3504
+        2400,
+        -940
       ]
     },
     {
       "parameters": {
+        "mode": "runOnceForAllItems",
         "jsCode": "const input = $input.first()?.json || {};\nconst text = String(input.replyText || '').trim();\nconst maxLength = 3200;\nif (!text) return [];\n\nfunction splitLongParagraph(paragraph) {\n  const chunks = [];\n  let rest = paragraph;\n  while (rest.length > maxLength) {\n    let cut = rest.lastIndexOf(' ', maxLength);\n    if (cut < 500) cut = maxLength;\n    chunks.push(rest.slice(0, cut).trim());\n    rest = rest.slice(cut).trim();\n  }\n  if (rest) chunks.push(rest);\n  return chunks;\n}\n\nfunction splitText(value) {\n  const paragraphs = value.split(/\\n{2,}/);\n  const chunks = [];\n  let current = '';\n  for (const paragraph of paragraphs) {\n    const clean = paragraph.trim();\n    if (!clean) continue;\n    if (clean.length > maxLength) {\n      if (current) chunks.push(current.trim());\n      current = '';\n      chunks.push(...splitLongParagraph(clean));\n      continue;\n    }\n    const candidate = current ? `${current}\\n\\n${clean}` : clean;\n    if (candidate.length > maxLength) {\n      chunks.push(current.trim());\n      current = clean;\n    } else {\n      current = candidate;\n    }\n  }\n  if (current) chunks.push(current.trim());\n  return chunks.length ? chunks : [value];\n}\n\nconst chunks = splitText(text);\nreturn chunks.map((splitText, index) => ({\n  json: { ...input, splitText, splitIndex: index + 1, splitTotal: chunks.length }\n}));"
       },
-      "id": "286d89e7-9800-4c07-ba78-2c557d5f288c",
+      "id": "177e975e-e529-4970-a67e-5b0145127c2d",
       "name": "Split Messages",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        20432,
-        3232
+        2640,
+        -1020
       ]
     },
     {
       "parameters": {
         "options": {}
       },
-      "id": "ceccf092-a22b-433e-baa9-a439b3fb13cd",
+      "id": "ddbb1a63-5838-420b-aed8-3d3ba7a86343",
       "name": "Loop Messages",
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
-        20672,
-        3232
+        2880,
+        -1020
       ]
     },
     {
@@ -781,13 +798,13 @@
         },
         "options": {}
       },
-      "id": "16262c98-3d0e-4387-a912-5ebc08b6bb1a",
+      "id": "a0000000-b000-c000-d000-000000000003",
       "name": "If Enviar a Evolution",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        20880,
-        3376
+        3120,
+        -1020
       ]
     },
     {
@@ -826,26 +843,26 @@
           }
         }
       },
-      "id": "e347c38c-87e1-4ecc-b0ca-3a14093b594f",
+      "id": "a2036d03-d824-4769-a39c-c93ec7601ed4",
       "name": "Send Text",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        21200,
-        3232
+        3400,
+        -1140
       ]
     },
     {
       "parameters": {
         "amount": 2
       },
-      "id": "ed730f6d-dfc4-47ae-8508-1155f275bf8e",
+      "id": "a46e2168-4bee-423f-87be-3863b73cf36a",
       "name": "Wait 2s",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        21472,
-        3360
+        3440,
+        -1140
       ],
       "webhookId": "wait-mis-finanzas-whatsapp-agent"
     },
@@ -863,165 +880,17 @@
         },
         "options": {}
       },
-      "id": "bed2ffdf-f6e4-44bb-b715-0f3c30f41773",
+      "id": "a0000000-b000-c000-d000-000000000005",
       "name": "Chat Response",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        20928,
-        3040
+        2920,
+        -840
       ]
     }
   ],
-  "pinData": {
-    "Webhook1": [
-      {
-        "json": {
-          "headers": {
-            "host": "vhvn8nwebhook.canela.life",
-            "user-agent": "axios/1.13.2",
-            "content-length": "1751",
-            "accept": "application/json, text/plain, */*",
-            "accept-encoding": "gzip, compress, deflate, br",
-            "content-type": "application/json",
-            "x-forwarded-for": "172.18.0.1",
-            "x-forwarded-host": "vhvn8nwebhook.canela.life",
-            "x-forwarded-port": "443",
-            "x-forwarded-proto": "https",
-            "x-forwarded-server": "7f9601f4b1ce",
-            "x-real-ip": "172.18.0.1"
-          },
-          "params": {},
-          "query": {},
-          "body": {
-            "event": "messages.upsert",
-            "instance": "ASESOR PREVISIONAL",
-            "data": {
-              "key": {
-                "remoteJid": "5492645271951@s.whatsapp.net",
-                "remoteJidAlt": "5492645271951@s.whatsapp.net",
-                "fromMe": false,
-                "id": "AC41A8E931C19EFA9E7D2A5AA3361873",
-                "participant": "",
-                "addressingMode": "lid"
-              },
-              "pushName": "Victor",
-              "status": "DELIVERY_ACK",
-              "message": {
-                "messageContextInfo": {
-                  "threadId": [],
-                  "deviceListMetadata": {
-                    "senderKeyIndexes": [],
-                    "recipientKeyIndexes": [],
-                    "senderKeyHash": {
-                      "0": 4,
-                      "1": 221,
-                      "2": 18,
-                      "3": 165,
-                      "4": 102,
-                      "5": 133,
-                      "6": 236,
-                      "7": 188,
-                      "8": 188,
-                      "9": 229
-                    },
-                    "senderTimestamp": {
-                      "low": 1780068105,
-                      "high": 0,
-                      "unsigned": true
-                    },
-                    "recipientKeyHash": {
-                      "0": 91,
-                      "1": 95,
-                      "2": 89,
-                      "3": 50,
-                      "4": 88,
-                      "5": 96,
-                      "6": 165,
-                      "7": 176,
-                      "8": 229,
-                      "9": 16
-                    },
-                    "recipientTimestamp": {
-                      "low": 1780200061,
-                      "high": 0,
-                      "unsigned": true
-                    }
-                  },
-                  "deviceListMetadataVersion": 2,
-                  "messageSecret": {
-                    "0": 163,
-                    "1": 222,
-                    "2": 147,
-                    "3": 136,
-                    "4": 126,
-                    "5": 157,
-                    "6": 248,
-                    "7": 27,
-                    "8": 199,
-                    "9": 200,
-                    "10": 206,
-                    "11": 34,
-                    "12": 174,
-                    "13": 163,
-                    "14": 216,
-                    "15": 96,
-                    "16": 250,
-                    "17": 104,
-                    "18": 129,
-                    "19": 3,
-                    "20": 50,
-                    "21": 143,
-                    "22": 200,
-                    "23": 22,
-                    "24": 79,
-                    "25": 138,
-                    "26": 254,
-                    "27": 7,
-                    "28": 248,
-                    "29": 9,
-                    "30": 14,
-                    "31": 119
-                  }
-                },
-                "conversation": "Quiero que me cargues un gasto de alimento por 2000"
-              },
-              "contextInfo": {
-                "mentionedJid": [],
-                "groupMentions": [],
-                "statusAttributions": [],
-                "expiration": 7776000,
-                "ephemeralSettingTimestamp": {
-                  "low": 1743473283,
-                  "high": 0,
-                  "unsigned": false
-                },
-                "disappearingMode": {
-                  "initiator": 0,
-                  "trigger": 2,
-                  "initiatedByMe": false
-                }
-              },
-              "messageType": "conversation",
-              "messageTimestamp": 1780203147,
-              "instanceId": "8271095d-4458-4840-88c8-fc6fa711c3e3",
-              "source": "android"
-            },
-            "destination": "https://vhvn8nwebhook.canela.life/webhook/mis-finanzas-whatsapp-agent",
-            "date_time": "2026-05-31T01:52:27.600Z",
-            "sender": "5492645235017@s.whatsapp.net",
-            "server_url": "https://vhvevolution.canela.life",
-            "apikey": "CF5F5982685B-4C8C-8436-74DB7805B605"
-          },
-          "webhookUrl": "https://vhvn8nwebhook.canela.life/webhook/mis-finanzas-whatsapp-agent",
-          "executionMode": "production"
-        },
-        "pairedItem": {
-          "item": 0
-        }
-      }
-    ]
-  },
+  "pinData": {},
   "connections": {
     "Webhook1": {
       "main": [
@@ -1352,7 +1221,8 @@
             "type": "main",
             "index": 0
           }
-        ]
+        ],
+        []
       ]
     },
     "Split Messages": {
@@ -1423,17 +1293,19 @@
           }
         ]
       ]
+    },
+    "Chat Response": {
+      "main": []
     }
   },
-  "active": true,
+  "active": false,
   "settings": {
     "executionOrder": "v1",
-    "binaryMode": "separate"
+    "timezone": "America/Argentina/Buenos_Aires"
   },
-  "versionId": "43c4a775-27da-4fa3-99d5-d6e80474b8f4",
+  "versionId": "2",
   "meta": {
-    "instanceId": "8d1f54810ed6bb7104019048eed904626ddedcbeda0d279fdb9a5ee41522f88a"
+    "templateCredsSetupCompleted": true
   },
-  "id": "FvImziocGsnLlrvA",
   "tags": []
 }

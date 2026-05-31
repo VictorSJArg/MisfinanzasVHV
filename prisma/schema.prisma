@@ -173,3 +173,11 @@ model ProjectionMonthlyOverride {
 
   @@unique([itemId, yearMonth])
 }
+
+model AssistantSession {
+  id        String   @id @default(uuid())
+  phone     String   @unique
+  action    String
+  payload   Json
+  createdAt DateTime @default(now())
+}

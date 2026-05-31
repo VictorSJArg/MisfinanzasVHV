@@ -187,24 +187,8 @@ const requestJson = async ({ method = 'GET', url, headers = {}, body }) => {
   }
 };
 
-async function callFinanceApp(sourcePhone, assistantRequest, confirmed) {
-  const config = $('Config').first().json;
-  return requestJson({
-    method: 'POST',
-    url: \`\${String(config.APP_BASE_URL || '').replace(/\\/$/, '')}/api/assistant\`,
-    headers: { Authorization: \`Bearer \${config.ASSISTANT_WEBHOOK_SECRET}\` },
-    body: {
-      sourcePhone,
-      action: assistantRequest.action,
-      payload: assistantRequest.payload || {},
-      confirmed
-    }
-  });
-}
-
 const item = $json;
 const staticData = $getWorkflowStaticData('global');
-staticData.pendingConfirmations ||= {};
 staticData.processedMessageIds ||= {};
 
 const messageId = item.data.id;
@@ -216,29 +200,35 @@ if (messageId) staticData.processedMessageIds[messageId] = Date.now();
 for (const [id, ts] of Object.entries(staticData.processedMessageIds)) {
   if (Number(ts) < Date.now() - 24 * 60 * 60 * 1000) delete staticData.processedMessageIds[id];
 }
-for (const [phone, pending] of Object.entries(staticData.pendingConfirmations)) {
-  if (!pending?.expiresAt || Date.now() > pending.expiresAt) delete staticData.pendingConfirmations[phone];
-}
 
 if (!item.authorized) {
   return [{ json: { ...item, shouldContinue: false, shouldSend: false, ignored: true, reason: 'phone_not_allowed' } }];
 }
 
-const pending = staticData.pendingConfirmations[item.data.phone];
-const text = normalize(item.data.text);
-const yes = ['si', 'sí', 'confirmo', 'confirmar', 'ok', 'dale', 'guardar', 'cargar'];
-const no = ['no', 'cancelar', 'cancela', 'anular', 'descartar'];
+const config = $('Config').first().json;
+const appResponse = await requestJson({
+  method: 'POST',
+  url: \`\${String(config.APP_BASE_URL || '').replace(/\\/$/, '')}/api/assistant\`,
+  headers: { Authorization: \`Bearer \${config.ASSISTANT_WEBHOOK_SECRET}\` },
+  body: {
+    sourcePhone: item.data.phone,
+    action: 'confirm',
+    payload: {
+      text: item.data.text
+    }
+  }
+});
 
-if (pending && yes.includes(text)) {
-  delete staticData.pendingConfirmations[item.data.phone];
-  const appResponse = await callFinanceApp(item.data.phone, pending.assistantRequest, true);
-  const replyText = appResponse.data?.reply || (appResponse.ok ? 'Listo. Acción confirmada.' : \`No pude ejecutar: \${appResponse.data?.error || appResponse.status}\`);
-  return [{ json: { ...item, shouldContinue: false, shouldSend: true, replyText, appResponse: appResponse.data } }];
-}
-
-if (pending && no.includes(text)) {
-  delete staticData.pendingConfirmations[item.data.phone];
-  return [{ json: { ...item, shouldContinue: false, shouldSend: true, replyText: 'Cancelado. No hice cambios.' } }];
+if (appResponse.ok && appResponse.data?.processed === true) {
+  return [{
+    json: {
+      ...item,
+      shouldContinue: false,
+      shouldSend: true,
+      replyText: appResponse.data.reply,
+      appResponse: appResponse.data
+    }
+  }];
 }
 
 return [{ json: { ...item, shouldContinue: true, shouldSend: false } }];`;
@@ -437,13 +427,6 @@ const appResponse = await requestJson({
 
 const requiresConfirmation = appResponse.status === 409 || appResponse.data?.requiresConfirmation === true;
 if (requiresConfirmation) {
-  const staticData = $getWorkflowStaticData('global');
-  staticData.pendingConfirmations ||= {};
-  staticData.pendingConfirmations[base.data.phone] = {
-    assistantRequest,
-    createdAt: Date.now(),
-    expiresAt: Date.now() + 10 * 60 * 1000
-  };
   return [{
     json: {
       ...base,

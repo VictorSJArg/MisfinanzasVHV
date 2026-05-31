@@ -17,6 +17,7 @@ type AssistantAction =
     | 'metadata'
     | 'summary'
     | 'search_transactions'
+    | 'confirm'
     | 'create_transaction'
     | 'update_transaction'
     | 'delete_transaction'
@@ -270,7 +271,7 @@ async function handleSearchTransactions(payload: Record<string, unknown>) {
     });
 }
 
-async function handleCreateTransaction(payload: Record<string, unknown>, confirmed: boolean) {
+async function handleCreateTransaction(payload: Record<string, unknown>, confirmed: boolean, phone: string) {
     const amount = asNumber(payload.amount);
     const type = asString(payload.type || payload.transactionType).toUpperCase() || 'EXPENSE';
     const date = asString(payload.date) || new Date().toISOString();
@@ -292,7 +293,10 @@ async function handleCreateTransaction(payload: Record<string, unknown>, confirm
         status: payload.status || 'PAID'
     };
 
-    if (!confirmed) return requiresConfirmation('create_transaction', preview);
+    if (!confirmed) {
+        await saveAssistantSession(phone, 'create_transaction', payload);
+        return requiresConfirmation('create_transaction', preview);
+    }
 
     const user = await getDefaultUser();
     const accountId = await resolveAccountId(user.id, payload);
@@ -316,11 +320,12 @@ async function handleCreateTransaction(payload: Record<string, unknown>, confirm
     });
 }
 
-async function handleUpdateTransaction(payload: Record<string, unknown>, confirmed: boolean) {
+async function handleUpdateTransaction(payload: Record<string, unknown>, confirmed: boolean, phone: string) {
     const id = asString(payload.id || payload.transactionId);
     if (!id) return json({ success: false, error: 'transaction id is required' }, 400);
 
     if (!confirmed) {
+        await saveAssistantSession(phone, 'update_transaction', payload);
         return requiresConfirmation('update_transaction', {
             id,
             amount: payload.amount,
@@ -354,7 +359,7 @@ async function handleUpdateTransaction(payload: Record<string, unknown>, confirm
     });
 }
 
-async function handleDeleteTransaction(payload: Record<string, unknown>, confirmed: boolean) {
+async function handleDeleteTransaction(payload: Record<string, unknown>, confirmed: boolean, phone: string) {
     const id = asString(payload.id || payload.transactionId);
     if (!id) return json({ success: false, error: 'transaction id is required' }, 400);
 
@@ -366,6 +371,7 @@ async function handleDeleteTransaction(payload: Record<string, unknown>, confirm
     if (!existing) return json({ success: false, error: 'Transaction not found' }, 404);
 
     if (!confirmed) {
+        await saveAssistantSession(phone, 'delete_transaction', { id });
         return requiresConfirmation('delete_transaction', {
             id,
             amount: Number(existing.amount),
@@ -431,13 +437,82 @@ async function handleCreditCards() {
     });
 }
 
+async function saveAssistantSession(phone: string, action: string, payload: Record<string, unknown>) {
+    if (!phone) return;
+    await prisma.assistantSession.upsert({
+        where: { phone },
+        update: { action, payload: payload as any, createdAt: new Date() },
+        create: { phone, action, payload: payload as any }
+    });
+}
+
+async function handleConfirm(payload: Record<string, unknown>, phone: string) {
+    if (!phone) {
+        return json({ success: true, processed: false });
+    }
+
+    const session = await prisma.assistantSession.findUnique({
+        where: { phone }
+    });
+
+    if (!session) {
+        return json({ success: true, processed: false });
+    }
+
+    const text = asString(payload.text).trim().toLowerCase();
+    const yesWords = ['si', 'sí', 'confirmo', 'confirmar', 'ok', 'dale', 'guardar', 'cargar'];
+    const noWords = ['no', 'cancelar', 'cancela', 'anular', 'descartar'];
+
+    if (yesWords.includes(text)) {
+        let response;
+        try {
+            if (session.action === 'create_transaction') {
+                response = await handleCreateTransaction(session.payload as Record<string, unknown>, true, phone);
+            } else if (session.action === 'update_transaction') {
+                response = await handleUpdateTransaction(session.payload as Record<string, unknown>, true, phone);
+            } else if (session.action === 'delete_transaction') {
+                response = await handleDeleteTransaction(session.payload as Record<string, unknown>, true, phone);
+            } else {
+                await prisma.assistantSession.delete({ where: { id: session.id } });
+                return json({ success: true, processed: false });
+            }
+
+            const resData = await response.json();
+            await prisma.assistantSession.delete({ where: { id: session.id } });
+            
+            return json({
+                success: true,
+                processed: true,
+                reply: resData.reply || 'Acción confirmada.'
+            });
+        } catch (error) {
+            console.error('Error executing pending action:', error);
+            return json({ success: false, error: errorMessage(error) }, 500);
+        }
+    }
+
+    if (noWords.includes(text)) {
+        await prisma.assistantSession.delete({ where: { id: session.id } });
+        return json({
+            success: true,
+            processed: true,
+            reply: 'Cancelado. No hice cambios.'
+        });
+    }
+
+    // Si dice cualquier otra cosa, descartamos la confirmación pendiente
+    // y dejamos que continúe el flujo
+    await prisma.assistantSession.delete({ where: { id: session.id } });
+    return json({ success: true, processed: false });
+}
+
 export async function POST(request: NextRequest) {
     const authError = requireAssistantAuth(request);
     if (authError) return authError;
 
     try {
         const body = await request.json() as AssistantRequestBody;
-        const sourcePhone = body.sourcePhone || body.from || body.phone;
+        const sourcePhone = body.sourcePhone || body.from || body.phone || '';
 
         if (!isAllowedAssistantPhone(sourcePhone)) {
             return json({ success: false, error: 'Phone is not allowed' }, 403);
@@ -455,12 +530,14 @@ export async function POST(request: NextRequest) {
                 return handleSummary(payload);
             case 'search_transactions':
                 return handleSearchTransactions(payload);
+            case 'confirm':
+                return handleConfirm(payload, sourcePhone);
             case 'create_transaction':
-                return handleCreateTransaction(payload, body.confirmed === true);
+                return handleCreateTransaction(payload, body.confirmed === true, sourcePhone);
             case 'update_transaction':
-                return handleUpdateTransaction(payload, body.confirmed === true);
+                return handleUpdateTransaction(payload, body.confirmed === true, sourcePhone);
             case 'delete_transaction':
-                return handleDeleteTransaction(payload, body.confirmed === true);
+                return handleDeleteTransaction(payload, body.confirmed === true, sourcePhone);
             case 'credit_cards':
                 return handleCreditCards();
             default:
