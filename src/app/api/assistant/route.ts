@@ -21,7 +21,8 @@ type AssistantAction =
     | 'create_transaction'
     | 'update_transaction'
     | 'delete_transaction'
-    | 'credit_cards';
+    | 'credit_cards'
+    | 'log_reply';
 
 interface AssistantRequestBody {
     action?: AssistantAction;
@@ -42,6 +43,35 @@ function errorMessage(error: unknown) {
 
 function money(value: number) {
     return `$${value.toLocaleString('es-AR', { maximumFractionDigits: 2 })}`;
+}
+
+async function getAssistantHistory(phone: string): Promise<{ role: string; content: string }[]> {
+    if (!phone) return [];
+    try {
+        const history = await prisma.assistantHistory.findUnique({
+            where: { phone }
+        });
+        if (!history || !history.messages || !Array.isArray(history.messages)) return [];
+        return history.messages as { role: string; content: string }[];
+    } catch (e) {
+        console.error('Error fetching chat history:', e);
+        return [];
+    }
+}
+
+async function appendToAssistantHistory(phone: string, role: 'user' | 'assistant', content: string) {
+    if (!phone || !content) return;
+    try {
+        const current = await getAssistantHistory(phone);
+        const updated = [...current, { role, content }].slice(-20); // Keep last 20 messages to control token usage
+        await prisma.assistantHistory.upsert({
+            where: { phone },
+            update: { messages: updated as any },
+            create: { phone, messages: updated as any }
+        });
+    } catch (e) {
+        console.error('Error saving chat history:', e);
+    }
 }
 
 async function getDefaultUser() {
@@ -137,12 +167,19 @@ async function resolveCategoryId(userId: string, type: string, payload: Record<s
     return category.id;
 }
 
-async function handleMetadata() {
+async function handleMetadata(payload: Record<string, unknown>, phone: string) {
     const user = await getDefaultUser();
     const [categories, accounts] = await Promise.all([
         prisma.category.findMany({ where: { userId: user.id }, orderBy: [{ type: 'asc' }, { name: 'asc' }] }),
         prisma.account.findMany({ where: { userId: user.id }, orderBy: { name: 'asc' } })
     ]);
+
+    const incomingText = asString(payload.text || payload.message);
+    if (incomingText) {
+        await appendToAssistantHistory(phone, 'user', incomingText);
+    }
+
+    const chatHistory = await getAssistantHistory(phone);
 
     return json({
         success: true,
@@ -153,7 +190,8 @@ async function handleMetadata() {
                 name: account.name,
                 type: account.type,
                 balance: Number(account.balance)
-            }))
+            })),
+            chatHistory
         },
         reply: `Tengo ${categories.length} categorias y ${accounts.length} cuentas disponibles.`
     });
@@ -466,6 +504,7 @@ async function handleConfirm(payload: Record<string, unknown>, phone: string) {
     if (yesWords.includes(text)) {
         let response;
         try {
+            await appendToAssistantHistory(phone, 'user', text);
             if (session.action === 'create_transaction') {
                 response = await handleCreateTransaction(session.payload as Record<string, unknown>, true, phone);
             } else if (session.action === 'update_transaction') {
@@ -480,6 +519,8 @@ async function handleConfirm(payload: Record<string, unknown>, phone: string) {
             const resData = await response.json();
             await prisma.assistantSession.delete({ where: { id: session.id } });
             
+            await appendToAssistantHistory(phone, 'assistant', resData.reply || 'Acción confirmada.');
+            
             return json({
                 success: true,
                 processed: true,
@@ -492,11 +533,14 @@ async function handleConfirm(payload: Record<string, unknown>, phone: string) {
     }
 
     if (noWords.includes(text)) {
+        await appendToAssistantHistory(phone, 'user', text);
         await prisma.assistantSession.delete({ where: { id: session.id } });
+        const reply = 'Cancelado. No hice cambios.';
+        await appendToAssistantHistory(phone, 'assistant', reply);
         return json({
             success: true,
             processed: true,
-            reply: 'Cancelado. No hice cambios.'
+            reply
         });
     }
 
@@ -525,7 +569,7 @@ export async function POST(request: NextRequest) {
             case 'ping':
                 return json({ success: true, reply: 'Assistant API online.' });
             case 'metadata':
-                return handleMetadata();
+                return handleMetadata(payload, sourcePhone);
             case 'summary':
                 return handleSummary(payload);
             case 'search_transactions':
@@ -540,6 +584,13 @@ export async function POST(request: NextRequest) {
                 return handleDeleteTransaction(payload, body.confirmed === true, sourcePhone);
             case 'credit_cards':
                 return handleCreditCards();
+            case 'log_reply':
+                const role = asString(payload.role) === 'user' ? 'user' : 'assistant';
+                const text = asString(payload.text);
+                if (text) {
+                    await appendToAssistantHistory(sourcePhone, role, text);
+                }
+                return json({ success: true });
             default:
                 return json({ success: false, error: 'Unsupported assistant action' }, 400);
         }

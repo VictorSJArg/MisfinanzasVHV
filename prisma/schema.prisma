@@ -181,3 +181,10 @@ model AssistantSession {
   payload   Json
   createdAt DateTime @default(now())
 }
+
+model AssistantHistory {
+  id        String   @id @default(uuid())
+  phone     String   @unique
+  messages  Json     // [ { role: 'user', content: '...' }, { role: 'assistant', content: '...' } ]
+  updatedAt DateTime @updatedAt
+}

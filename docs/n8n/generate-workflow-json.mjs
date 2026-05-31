@@ -310,7 +310,9 @@ const metadata = await requestJson({
   body: {
     sourcePhone: item.data.phone,
     action: 'metadata',
-    payload: {},
+    payload: {
+      text: item.normalizedInput
+    },
     confirmed: false
   }
 });
@@ -334,7 +336,8 @@ const agentInput = {
     phone: item.data.phone,
     defaultAccountName: config.DEFAULT_ACCOUNT_NAME || 'Efectivo',
     categories: metadata.data?.data?.categories || [],
-    accounts: metadata.data?.data?.accounts || []
+    accounts: metadata.data?.data?.accounts || [],
+    chatHistory: metadata.data?.data?.chatHistory || []
   }
 };
 
@@ -405,12 +408,40 @@ if (typeof agentOutput === 'string') {
 }
 
 if (agentOutput.intent === 'clarification' || agentOutput.intent === 'unsupported') {
-  return [{ json: { ...base, shouldSend: true, replyText: agentOutput.reply || 'Necesito un dato más para avanzar.', agentOutput } }];
+  const replyText = agentOutput.reply || 'Necesito un dato más para avanzar.';
+  await requestJson({
+    method: 'POST',
+    url: \`\${String(config.APP_BASE_URL || '').replace(/\\/$/, '')}/api/assistant\`,
+    headers: { Authorization: \`Bearer \${config.ASSISTANT_WEBHOOK_SECRET}\` },
+    body: {
+      sourcePhone: base.data.phone,
+      action: 'log_reply',
+      payload: {
+        role: 'assistant',
+        text: replyText
+      }
+    }
+  });
+  return [{ json: { ...base, shouldSend: true, replyText, agentOutput } }];
 }
 
 const assistantRequest = agentOutput.assistantRequest || {};
 if (!assistantRequest.action) {
-  return [{ json: { ...base, shouldSend: true, replyText: agentOutput.reply || 'No pude convertir el pedido en una acción segura.', agentOutput } }];
+  const replyText = agentOutput.reply || 'No pude convertir el pedido en una acción segura.';
+  await requestJson({
+    method: 'POST',
+    url: \`\${String(config.APP_BASE_URL || '').replace(/\\/$/, '')}/api/assistant\`,
+    headers: { Authorization: \`Bearer \${config.ASSISTANT_WEBHOOK_SECRET}\` },
+    body: {
+      sourcePhone: base.data.phone,
+      action: 'log_reply',
+      payload: {
+        role: 'assistant',
+        text: replyText
+      }
+    }
+  });
+  return [{ json: { ...base, shouldSend: true, replyText, agentOutput } }];
 }
 
 const appResponse = await requestJson({
@@ -426,19 +457,40 @@ const appResponse = await requestJson({
 });
 
 const requiresConfirmation = appResponse.status === 409 || appResponse.data?.requiresConfirmation === true;
+let replyText;
+if (requiresConfirmation) {
+  replyText = confirmationText(assistantRequest.payload, appResponse.data?.preview);
+} else {
+  replyText = appResponse.data?.reply || agentOutput.reply || (appResponse.ok ? 'Listo.' : \`No pude ejecutar: \${appResponse.data?.error || appResponse.status}\`);
+}
+
+// Log assistant reply
+await requestJson({
+  method: 'POST',
+  url: \`\${String(config.APP_BASE_URL || '').replace(/\\/$/, '')}/api/assistant\`,
+  headers: { Authorization: \`Bearer \${config.ASSISTANT_WEBHOOK_SECRET}\` },
+  body: {
+    sourcePhone: base.data.phone,
+    action: 'log_reply',
+    payload: {
+      role: 'assistant',
+      text: replyText
+    }
+  }
+});
+
 if (requiresConfirmation) {
   return [{
     json: {
       ...base,
       shouldSend: true,
-      replyText: confirmationText(assistantRequest.payload, appResponse.data?.preview),
+      replyText,
       agentOutput,
       appResponse: appResponse.data
     }
   }];
 }
 
-const replyText = appResponse.data?.reply || agentOutput.reply || (appResponse.ok ? 'Listo.' : \`No pude ejecutar: \${appResponse.data?.error || appResponse.status}\`);
 return [{ json: { ...base, shouldSend: true, replyText, agentOutput, appResponse: appResponse.data } }];`;
 
 const splitMessagesCode = `const input = $input.first()?.json || {};
