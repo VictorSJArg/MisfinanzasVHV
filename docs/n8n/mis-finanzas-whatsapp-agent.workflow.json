@@ -792,6 +792,16 @@
                 "operation": "notEmpty",
                 "singleValue": true
               }
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000013",
+              "leftValue": "={{ $json.data.source }}",
+              "rightValue": "chat",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals",
+                "name": "filter.operator.notEquals"
+              }
             }
           ],
           "combinator": "and"

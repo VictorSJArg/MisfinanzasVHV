@@ -968,6 +968,16 @@ const workflow = {
                 operation: 'notEmpty',
                 singleValue: true
               }
+            },
+            {
+              id: cryptoId(),
+              leftValue: '={{ $json.data.source }}',
+              rightValue: 'chat',
+              operator: {
+                type: 'string',
+                operation: 'notEquals',
+                name: 'filter.operator.notEquals'
+              }
             }
           ],
           combinator: 'and'
