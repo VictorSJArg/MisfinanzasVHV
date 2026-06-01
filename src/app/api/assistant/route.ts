@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
-import { endOfMonth, format, startOfMonth } from 'date-fns';
+import { endOfMonth, format, startOfMonth, subMonths } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { isAllowedAssistantPhone, requireAssistantAuth } from '@/lib/apiAuth';
 import { prisma } from '@/lib/prisma';
@@ -11,6 +11,7 @@ import {
     updateTransactionWithBalance,
     balanceMultiplier
 } from '@/lib/transactions';
+import { getCreditCardProjectionsForRange, CreditCardProjection } from '@/lib/creditCardProjections';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +26,7 @@ type AssistantAction =
     | 'update_transaction'
     | 'delete_transaction'
     | 'delete_transactions_bulk'
+    | 'dashboard_analysis'
     | 'credit_cards'
     | 'log_reply';
 
@@ -675,6 +677,195 @@ async function handleDeleteTransactionsBulk(payload: Record<string, unknown>, co
     });
 }
 
+// Auxiliares para análisis de dashboard (compatibles con api/dashboard)
+const tcLabels: Record<string, string> = {
+    COMBUSTIBLE: 'Combustible TC',
+    ALIMENTOS: 'Alimentos TC',
+    ENTRETENIMIENTO: 'Entretenimiento TC',
+    SERVICIOS: 'Servicios TC',
+    SEGUROS: 'Seguros TC',
+    SALUD: 'Salud TC',
+    GASTRONOMIA: 'Gastronomia TC',
+    ROPA: 'Ropa TC',
+    TRANSPORTE: 'Transporte TC',
+    IMPUESTOS: 'Impuestos TC',
+    CARGOS: 'Cargos TC',
+    STATEMENT: 'Pago Resumen TC',
+    OTROS: 'Otros TC'
+};
+
+function inRange(date: Date, start: Date, end: Date) {
+    return date >= start && date <= end;
+}
+
+function projectionDate(projection: CreditCardProjection) {
+    return new Date(projection.date);
+}
+
+function activeProjections(projections: CreditCardProjection[]) {
+    return projections.filter((projection) => projection.status !== 'CANCELLED');
+}
+
+function sum(values: number[]) {
+    return values.reduce((total, value) => total + value, 0);
+}
+
+function calcVariation(current: number, previous: number) {
+    if (previous === 0) return current > 0 ? 100 : 0;
+    return ((current - previous) / previous) * 100;
+}
+
+function txsInRange<T extends { date: Date }>(transactions: T[], start: Date, end: Date) {
+    return transactions.filter((transaction) => inRange(transaction.date, start, end));
+}
+
+function projectionsInRange(projections: CreditCardProjection[], start: Date, end: Date) {
+    return projections.filter((projection) => inRange(projectionDate(projection), start, end));
+}
+
+function effectiveType(transaction: { type: string; categoryId: string | null }, categoryTypeMap: Map<string, string>) {
+    return transaction.categoryId ? categoryTypeMap.get(transaction.categoryId) || transaction.type : transaction.type;
+}
+
+function realIncome(transactions: Array<{ type: string; amount: unknown; categoryId: string | null }>, categoryTypeMap: Map<string, string>) {
+    return sum(
+        transactions
+            .filter((transaction) => effectiveType(transaction, categoryTypeMap) === 'INCOME')
+            .map((transaction) => Number(transaction.amount))
+    );
+}
+
+function realExpense(transactions: Array<{ type: string; amount: unknown; status: string; categoryId: string | null }>, categoryTypeMap: Map<string, string>) {
+    return sum(
+        transactions
+            .filter((transaction) => effectiveType(transaction, categoryTypeMap) === 'EXPENSE' && transaction.status !== 'CANCELLED')
+            .map((transaction) => Number(transaction.amount))
+    );
+}
+
+function projectionExpense(projections: CreditCardProjection[]) {
+    return sum(activeProjections(projections).map((projection) => projection.amount));
+}
+
+function projectionCategoryName(category?: string) {
+    const key = category || 'OTROS';
+    return tcLabels[key] || `${key} TC`;
+}
+
+async function handleDashboardAnalysis(payload: Record<string, unknown>) {
+    const user = await getDefaultUser();
+    
+    const now = new Date();
+    const month = asNumber(payload.month) || now.getMonth() + 1;
+    const year = asNumber(payload.year) || now.getFullYear();
+    const baseDate = new Date(year, month - 1, 15);
+
+    const currentMonthStart = startOfMonth(baseDate);
+    const currentMonthEnd = endOfMonth(baseDate);
+    const previousMonthStart = startOfMonth(subMonths(baseDate, 1));
+    const previousMonthEnd = endOfMonth(subMonths(baseDate, 1));
+    const historyStart = startOfMonth(subMonths(baseDate, 5));
+
+    const [transactions, categories, accounts, projections] = await Promise.all([
+        prisma.transaction.findMany({
+            where: {
+                userId: user.id,
+                date: { gte: historyStart, lte: currentMonthEnd }
+            }
+        }),
+        prisma.category.findMany({ where: { userId: user.id } }),
+        prisma.account.findMany({ where: { userId: user.id } }),
+        getCreditCardProjectionsForRange(user.id, historyStart, currentMonthEnd)
+    ]);
+
+    const categoryMap = new Map(categories.map((c) => [c.id, c.name]));
+    const categoryTypeMap = new Map(categories.map((c) => [c.id, c.type]));
+
+    const currentMonthTxs = txsInRange(transactions, currentMonthStart, currentMonthEnd);
+    const previousMonthTxs = txsInRange(transactions, previousMonthStart, previousMonthEnd);
+
+    const currentMonthProjections = projectionsInRange(projections, currentMonthStart, currentMonthEnd);
+    const previousMonthProjections = projectionsInRange(projections, previousMonthStart, previousMonthEnd);
+
+    const currentMonthIncome = realIncome(currentMonthTxs, categoryTypeMap);
+    const previousMonthIncome = realIncome(previousMonthTxs, categoryTypeMap);
+
+    const currentMonthExpense = realExpense(currentMonthTxs, categoryTypeMap) + projectionExpense(currentMonthProjections);
+    const previousMonthExpense = realExpense(previousMonthTxs, categoryTypeMap) + projectionExpense(previousMonthProjections);
+
+    // Accounts balance
+    const accountsText = accounts.map(a => `• ${a.name}: ${money(Number(a.balance))}`).join('\n');
+
+    // Category breakdown for current month
+    const categoryBreakdownMap = new Map<string, number>();
+    for (const transaction of currentMonthTxs) {
+        if (effectiveType(transaction, categoryTypeMap) !== 'EXPENSE' || transaction.status === 'CANCELLED') continue;
+        const name = categoryMap.get(transaction.categoryId || '') || 'Sin categoria';
+        categoryBreakdownMap.set(name, (categoryBreakdownMap.get(name) || 0) + Number(transaction.amount));
+    }
+    for (const projection of activeProjections(currentMonthProjections)) {
+        const name = projectionCategoryName(projection.category);
+        categoryBreakdownMap.set(name, (categoryBreakdownMap.get(name) || 0) + projection.amount);
+    }
+
+    const categoryBreakdown = Array.from(categoryBreakdownMap.entries())
+        .map(([name, amount]) => ({ name, amount }))
+        .sort((a, b) => b.amount - a.amount);
+
+    const topExpensesText = categoryBreakdown.slice(0, 3)
+        .map((item, idx) => `${idx + 1}. ${item.name}: ${money(item.amount)}`)
+        .join('\n');
+
+    // 6-month history summary
+    const historyText = [];
+    for (let i = 5; i >= 0; i--) {
+        const mStart = startOfMonth(subMonths(baseDate, i));
+        const mEnd = endOfMonth(subMonths(baseDate, i));
+        const mTxs = txsInRange(transactions, mStart, mEnd);
+        const mProjections = projectionsInRange(projections, mStart, mEnd);
+        const inc = realIncome(mTxs, categoryTypeMap);
+        const exp = realExpense(mTxs, categoryTypeMap) + projectionExpense(mProjections);
+        const bal = inc - exp;
+        const label = format(mStart, 'MMM yyyy', { locale: es });
+        historyText.push(`• ${label}: Ingresos ${money(inc)} | Gastos ${money(exp)} | Saldo ${money(bal)}`);
+    }
+
+    const currentLabel = format(baseDate, 'MMMM yyyy', { locale: es });
+    const prevLabel = format(subMonths(baseDate, 1), 'MMMM yyyy', { locale: es });
+
+    let reply = `📊 *Análisis de Dashboard (${currentLabel})*\n\n`;
+    reply += `💰 *Mes Actual (${currentLabel}):*\n`;
+    reply += `• Ingresos: ${money(currentMonthIncome)}\n`;
+    reply += `• Gastos: ${money(currentMonthExpense)}\n`;
+    reply += `• Balance: ${money(currentMonthIncome - currentMonthExpense)}\n\n`;
+
+    reply += `📉 *Comparación con ${prevLabel}:*\n`;
+    reply += `• Variación Ingresos: ${calcVariation(currentMonthIncome, previousMonthIncome).toFixed(1)}%\n`;
+    reply += `• Variación Gastos: ${calcVariation(currentMonthExpense, previousMonthExpense).toFixed(1)}%\n\n`;
+
+    if (topExpensesText) {
+        reply += `🔺 *Mayores Gastos del Mes:* \n${topExpensesText}\n\n`;
+    }
+
+    if (accountsText) {
+        reply += `🏦 *Saldos en Cuentas:* \n${accountsText}\n\n`;
+    }
+
+    reply += `📅 *Historial de los últimos 6 meses:*\n${historyText.join('\n')}`;
+
+    return json({
+        success: true,
+        data: {
+            currentMonth: { income: currentMonthIncome, expense: currentMonthExpense },
+            previousMonth: { income: previousMonthIncome, expense: previousMonthExpense },
+            accounts: accounts.map(a => ({ name: a.name, balance: Number(a.balance) })),
+            categoryBreakdown,
+            history: historyText
+        },
+        reply
+    });
+}
+
 async function handleCreditCards() {
     const user = await getDefaultUser();
     const cards = await prisma.creditCard.findMany({
@@ -830,6 +1021,8 @@ export async function POST(request: NextRequest) {
                 return handleDeleteTransaction(payload, body.confirmed === true, sourcePhone);
             case 'delete_transactions_bulk':
                 return handleDeleteTransactionsBulk(payload, body.confirmed === true, sourcePhone);
+            case 'dashboard_analysis':
+                return handleDashboardAnalysis(payload);
             case 'credit_cards':
                 return handleCreditCards();
             case 'log_reply':
