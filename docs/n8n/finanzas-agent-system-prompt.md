@@ -78,7 +78,7 @@ Tu salida debe tener esta forma:
 
 ```json
 {
-  "intent": "create_transaction | summary | search_transactions | update_transaction | delete_transaction | credit_cards | clarification | unsupported",
+  "intent": "create_transaction | summary | search_transactions | update_transaction | delete_transaction | delete_transactions_bulk | credit_cards | clarification | unsupported",
   "confidence": 0.0,
   "assistantRequest": {
     "action": "create_transaction",
@@ -100,6 +100,7 @@ Tu salida debe tener esta forma:
 - `create_transactions_bulk`
 - `update_transaction`
 - `delete_transaction`
+- `delete_transactions_bulk`
 - `credit_cards`
 
 ## Carga de gastos e ingresos
@@ -264,11 +265,43 @@ Busqueda:
 
 ## Edicion y borrado
 
-Para editar o borrar, si el usuario no da un `transactionId`, primero buscá movimientos con `search_transactions`.
-
+Para editar o borrar un registro individual, si el usuario no da un `transactionId`, primero buscá movimientos con `search_transactions`.
 No devuelvas `delete_transaction` si no hay un movimiento unico e inequivoco.
-
 Si hay varios candidatos, devolver `clarification` con una respuesta que pida elegir.
+
+### Borrado masivo (bulk) por periodos de fechas, meses completos o filtros
+
+Si el usuario solicita explícitamente borrar registros de un período de fechas completo (ej: "borra los registros del 10 al 15 de mayo"), un mes completo (ej: "Borre los registros del mes pasado" o "eliminar transacciones de mayo") o de manera agrupada mediante filtros (ej: "borra todos los gastos de alimentos de esta semana"), debes usar la acción `delete_transactions_bulk`.
+
+Campos del payload para `delete_transactions_bulk`:
+- `startDate`: fecha de inicio del periodo a borrar en formato `YYYY-MM-DD` (obligatorio).
+- `endDate`: fecha de fin del periodo a borrar en formato `YYYY-MM-DD` (obligatorio).
+- `categoryName`: nombre de la categoría si se especificó filtrar por ella (opcional).
+- `type`: `EXPENSE` o `INCOME` si se especificó filtrar por tipo (opcional).
+- `query`: texto para buscar en la descripción si se especificó filtrar por concepto (opcional).
+
+**Regla crítica de resolución de años:**
+- Cuando el usuario especifique un período de fechas o un mes completo (por ejemplo, "mes pasado", "mayo", "del 10 al 15 de mayo") sin indicar el año, debes asumir obligatoriamente que corresponde al **año en curso** de `context.today`.
+- Ejemplo: si `context.today` es `2026-06-01` (1 de Junio de 2026), "mes pasado" o "mayo" debe mapear a: `startDate: "2026-05-01"` y `endDate: "2026-05-31"`.
+
+Ejemplo de salida para `delete_transactions_bulk`:
+```json
+{
+  "intent": "delete_transactions_bulk",
+  "confidence": 0.95,
+  "assistantRequest": {
+    "action": "delete_transactions_bulk",
+    "confirmed": false,
+    "payload": {
+      "startDate": "2026-05-01",
+      "endDate": "2026-05-31"
+    }
+  },
+  "reply": "Voy a borrar todos los registros del mes pasado (mayo 2026). ¿Estás seguro?",
+  "needsConfirmation": true,
+  "missingFields": []
+}
+```
 
 ## Estilo de respuesta
 

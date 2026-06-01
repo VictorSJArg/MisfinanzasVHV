@@ -7,6 +7,7 @@ import { prisma } from '@/lib/prisma';
 import {
     createTransactionWithBalance,
     deleteTransactionWithBalance,
+    deleteTransactionsWithBalance,
     updateTransactionWithBalance,
     balanceMultiplier
 } from '@/lib/transactions';
@@ -23,6 +24,7 @@ type AssistantAction =
     | 'create_transactions_bulk'
     | 'update_transaction'
     | 'delete_transaction'
+    | 'delete_transactions_bulk'
     | 'credit_cards'
     | 'log_reply';
 
@@ -573,6 +575,106 @@ async function handleDeleteTransaction(payload: Record<string, unknown>, confirm
     });
 }
 
+async function handleDeleteTransactionsBulk(payload: Record<string, unknown>, confirmed: boolean, phone: string) {
+    const user = await getDefaultUser();
+    const where: Prisma.TransactionWhereInput = { userId: user.id };
+
+    const startDateStr = asString(payload.startDate);
+    const endDateStr = asString(payload.endDate);
+    const category = asString(payload.category || payload.categoryName);
+    const type = asString(payload.type).toUpperCase();
+    const query = asString(payload.query || payload.description);
+
+    if (!startDateStr || !endDateStr) {
+        return json({ success: false, error: 'startDate and endDate are required' }, 400);
+    }
+
+    where.date = {
+        gte: new Date(startDateStr),
+        lte: (() => {
+            const end = new Date(endDateStr);
+            end.setHours(23, 59, 59, 999);
+            return end;
+        })()
+    };
+
+    if (category) {
+        where.category = {
+            name: { contains: category, mode: 'insensitive' }
+        };
+    }
+
+    if (type === 'INCOME' || type === 'EXPENSE') {
+        where.type = type;
+    }
+
+    if (query) {
+        const words = query.toLowerCase().split(/\s+/).filter((word) => word.length > 2);
+        if (words.length > 0) {
+            where.OR = words.map((word) => ({
+                description: { contains: word, mode: 'insensitive' }
+            }));
+        }
+    }
+
+    const transactions = await prisma.transaction.findMany({
+        where,
+        include: { category: true, account: true },
+        orderBy: { date: 'desc' }
+    });
+
+    if (transactions.length === 0) {
+        return json({
+            success: true,
+            data: { count: 0 },
+            reply: 'No encontré registros para borrar con los filtros especificados.'
+        });
+    }
+
+    const totalAmount = transactions.reduce((sum, t) => sum + Number(t.amount), 0);
+    const expensesCount = transactions.filter(t => t.type === 'EXPENSE').length;
+    const incomesCount = transactions.filter(t => t.type === 'INCOME').length;
+
+    const preview = {
+        count: transactions.length,
+        expensesCount,
+        incomesCount,
+        totalAmount,
+        startDate: startDateStr,
+        endDate: endDateStr,
+        category,
+        type,
+        query,
+        transactionsPreview: transactions.slice(0, 5).map(t => ({
+            id: t.id,
+            date: t.date,
+            amount: Number(t.amount),
+            type: t.type,
+            description: t.description,
+            category: t.category?.name || null
+        }))
+    };
+
+    if (!confirmed) {
+        await saveAssistantSession(phone, 'delete_transactions_bulk', payload);
+        return json({
+            success: false,
+            requiresConfirmation: true,
+            action: 'delete_transactions_bulk',
+            preview,
+            reply: `Encontré ${transactions.length} registros para borrar.`
+        }, 409);
+    }
+
+    const count = await deleteTransactionsWithBalance(where);
+
+    return json({
+        success: true,
+        data: { count },
+        reply: `Listo. Eliminé ${count} registros.`
+    });
+}
+
 async function handleCreditCards() {
     const user = await getDefaultUser();
     const cards = await prisma.creditCard.findMany({
@@ -651,6 +753,8 @@ async function handleConfirm(payload: Record<string, unknown>, phone: string) {
                 response = await handleUpdateTransaction(session.payload as Record<string, unknown>, true, phone);
             } else if (session.action === 'delete_transaction') {
                 response = await handleDeleteTransaction(session.payload as Record<string, unknown>, true, phone);
+            } else if (session.action === 'delete_transactions_bulk') {
+                response = await handleDeleteTransactionsBulk(session.payload as Record<string, unknown>, true, phone);
             } else {
                 await prisma.assistantSession.delete({ where: { id: session.id } });
                 return json({ success: true, processed: false });
@@ -724,6 +828,8 @@ export async function POST(request: NextRequest) {
                 return handleUpdateTransaction(payload, body.confirmed === true, sourcePhone);
             case 'delete_transaction':
                 return handleDeleteTransaction(payload, body.confirmed === true, sourcePhone);
+            case 'delete_transactions_bulk':
+                return handleDeleteTransactionsBulk(payload, body.confirmed === true, sourcePhone);
             case 'credit_cards':
                 return handleCreditCards();
             case 'log_reply':

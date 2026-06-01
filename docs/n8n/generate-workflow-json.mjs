@@ -354,8 +354,39 @@ const executeAssistantCode = `function money(value) {
   return \`$\${number.toLocaleString('es-AR', { maximumFractionDigits: 2 })}\`;
 }
 
-function confirmationText(payload, appPreview) {
+function confirmationText(action, payload, appPreview) {
   const preview = appPreview || payload || {};
+  if (action === 'delete_transaction') {
+    return [
+      '¿Confirmo la ELIMINACIÓN del siguiente movimiento?',
+      preview.date ? \`Fecha: \${preview.date.split('T')[0]}\` : '',
+      preview.category ? \`Categoría: \${preview.category}\` : '',
+      preview.amount ? \`Monto: \${money(preview.amount)}\` : '',
+      preview.description ? \`Detalle: \${preview.description}\` : '',
+      '',
+      'Respondé SI para confirmar o NO para cancelar.'
+    ].filter(Boolean).join('\\n');
+  }
+  if (action === 'delete_transactions_bulk') {
+    const list = (preview.transactionsPreview || []).map((t) => {
+      const d = t.date ? t.date.split('T')[0] : '';
+      const sign = t.type === 'EXPENSE' ? '-' : '+';
+      return \`• \${d}: \${sign}\${money(t.amount)}\${t.description ? \` - \${t.description}\` : ''}\${t.category ? \` (\${t.category})\` : ''}\`;
+    }).join('\\n');
+    let filterStr = '';
+    if (preview.category) filterStr += \` de la categoría "\${preview.category}"\`;
+    if (preview.query) filterStr += \` que coincidan con "\${preview.query}"\`;
+    
+    return [
+      \`¿Confirmo la ELIMINACIÓN de \${preview.count} registros del período \${preview.startDate} al \${preview.endDate}\${filterStr}?\`,
+      \`Monto total: \${money(preview.totalAmount)}\`,
+      list ? \`\\nVista previa:\\n\${list}\` : '',
+      preview.count > 5 ? \`... y \${preview.count - 5} registros más.\` : '',
+      '',
+      '⚠️ ESTA ACCIÓN NO SE PUEDE DESHACER.',
+      'Respondé SI para confirmar o NO para cancelar.'
+    ].filter(Boolean).join('\\n');
+  }
   if (preview.count && preview.transactions) {
     const type = preview.type === 'INCOME' ? 'ingresos' : 'gastos';
     const list = preview.transactions.map((t) => {
@@ -472,7 +503,7 @@ const appResponse = await requestJson({
 const requiresConfirmation = appResponse.status === 409 || appResponse.data?.requiresConfirmation === true;
 let replyText;
 if (requiresConfirmation) {
-  replyText = confirmationText(assistantRequest.payload, appResponse.data?.preview);
+  replyText = confirmationText(assistantRequest.action, assistantRequest.payload, appResponse.data?.preview);
 } else {
   replyText = appResponse.data?.reply || agentOutput.reply || (appResponse.ok ? 'Listo.' : \`No pude ejecutar: \${appResponse.data?.error || appResponse.status}\`);
 }
