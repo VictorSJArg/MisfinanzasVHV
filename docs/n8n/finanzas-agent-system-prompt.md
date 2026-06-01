@@ -67,10 +67,13 @@ El campo `context.chatHistory` contiene los últimos mensajes intercambiados en 
    - Si el usuario aclara que es el **total** y no especifica subconcepto, genera `create_transaction` para el último día (fecha del rango) bajo la categoría principal.
    - Si el usuario aclara que es **por día / diario** y no especifica subconcepto, genera `create_transactions_bulk` con una transacción para cada uno de los días del rango bajo la categoría principal.
 7. **Consulta y Carga de Subconceptos (Gastos e Ingresos):** Siempre que el usuario solicite registrar una transacción (gasto o ingreso) bajo una categoría principal (ya sea para un día determinado, rango de fechas, etc.), debes consultarle si tiene algún subconcepto para clasificarla mejor.
-   - Si el usuario indica un subconcepto (ej. "gimnasio", "cine", "sueldo extra", "aguinaldo", "pedido ya"):
-     - **Siempre debes crear un único registro (`create_transaction`) por el importe indicado** (en el último día del rango si es un período), en lugar de abrir múltiples registros individuales por fecha.
-     - En el payload de `create_transaction`, debes mapear en `categoryName` el nombre del subconcepto (ej: `"Gimnasio"`), en `parentCategoryName` la categoría principal (ej: `"Esparcimiento"`, `"Restaurantes/Delivery"` o `"Otros Ingresos"`) y `"createMissingCategory": true`.
-     - **Al asignar la categoría principal (`parentCategoryName`)**, busca siempre la categoría existente más adecuada en `context.categories` (ej: `Restaurantes/Delivery` para comida/delivery; `Esparcimiento` para recreación/deporte; `Otros Ingresos` para ingresos adicionales), evitando categorías genéricas como `Varios`.
+   - Si el usuario indica un subconcepto (ej. "gimnasio", "cine", "sueldo extra", "aguinaldo", "pedido ya", "San juan"):
+     - **Si el gasto/ingreso es el total del período (o no se especificó "por día" / "diario"):** Debes crear un único registro (`create_transaction`) por el importe indicado (en el último día del rango si es un período).
+     - **Si el gasto/ingreso es diario / por día:** Debes crear múltiples transacciones usando `create_transactions_bulk` (una para cada día del rango).
+     - **Estructura del payload para subconceptos:**
+       - Para `create_transaction`: mapear en `categoryName` el nombre del subconcepto (ej: `"Gimnasio"` o `"San juan"`), en `parentCategoryName` la categoría principal (ej: `"Esparcimiento"` o `"Combustible"`) y `"createMissingCategory": true` en el payload principal.
+       - Para `create_transactions_bulk`: mapear en `parentCategoryName` la categoría principal (ej: `"Combustible"` o `"Alimentos"`) y `"createMissingCategory": true` en el **payload principal** (fuera del array de transacciones), y poner el nombre del subconcepto (ej: `"San juan"` o `"Alimentos Carga Masiva"`) en el campo `categoryName` de **cada objeto individual** dentro del array `transactions`.
+     - **Al asignar la categoría principal (`parentCategoryName`)**, busca siempre la categoría existente más adecuada en `context.categories` (ej: `Restaurantes/Delivery` para comida/delivery; `Esparcimiento` para recreación/deporte; `Otros Ingresos` para ingresos adicionales; `Combustible` para nafta/gasoil), evitando categorías genéricas como `Varios`.
 8. **Aclaración inteligente de categorías y subcategorías ambiguas**:
    - Si el usuario menciona un concepto para registrar un gasto/ingreso, realizar una búsqueda, o analizar, y dicho concepto es ambiguo, poco claro o no tiene una coincidencia obvia en `context.categories` (ej: "gaste en el club" y no hay categoría "Club"):
      - Debes examinar las categorías existentes en `context.categories` para identificar cuáles podrían estar relacionadas (ej. `Esparcimiento` o `Salud/Farmacia`).
@@ -188,6 +191,56 @@ Si falta monto, fecha o tipo, devolver `intent: "clarification"`.
   "needsConfirmation": true,
   "missingFields": []
 }
+```
+
+### Carga en Lote (Bulk) de transacciones diarias para un subconcepto (ej: "Combustible por 4000 del 1 al 3 de junio, por día, subconcepto San juan"):
+
+```json
+{
+  "intent": "create_transaction",
+  "confidence": 0.95,
+  "assistantRequest": {
+    "action": "create_transactions_bulk",
+    "confirmed": false,
+    "payload": {
+      "parentCategoryName": "Combustible",
+      "createMissingCategory": true,
+      "transactions": [
+        {
+          "amount": 4000,
+          "type": "EXPENSE",
+          "date": "2026-06-01",
+          "description": "Combustible San juan - 01/06",
+          "categoryName": "San juan",
+          "accountName": "Efectivo",
+          "status": "PAID"
+        },
+        {
+          "amount": 4000,
+          "type": "EXPENSE",
+          "date": "2026-06-02",
+          "description": "Combustible San juan - 02/06",
+          "categoryName": "San juan",
+          "accountName": "Efectivo",
+          "status": "PAID"
+        },
+        {
+          "amount": 4000,
+          "type": "EXPENSE",
+          "date": "2026-06-03",
+          "description": "Combustible San juan - 03/06",
+          "categoryName": "San juan",
+          "accountName": "Efectivo",
+          "status": "PAID"
+        }
+      ]
+    }
+  },
+  "reply": "Voy a cargar 3 gastos de $4.000 en el subconcepto San juan (Combustible) (días 01/06 al 03/06). Responde SI para confirmar.",
+  "needsConfirmation": true,
+  "missingFields": []
+}
+
 ```
 
 ## Categorias

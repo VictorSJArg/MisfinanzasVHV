@@ -908,7 +908,7 @@ const workflow = {
         },
         simplify: true,
         jsonOutput: true,
-        options: { temperature: 0, maxTokens: 1200 }
+        options: { temperature: 0, maxTokens: 4000 }
       },
       id: id('d699fe80-6cb6-4460-9bc5-d6d884e1d7d7'),
       name: 'OpenAI Interpretar Pedido',
