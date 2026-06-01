@@ -120,7 +120,8 @@ const sender = body.sender || data.sender || remoteJid || body.phone || '';
 const isLid = String(remoteJid).includes('@lid');
 const senderPhone = normalizePhone(sender);
 const remotePhone = normalizePhone(String(remoteJid).replace('@s.whatsapp.net', '').replace('@c.us', '').replace('@lid', ''));
-const phone = body.phone ? normalizePhone(body.phone) : (isLid && senderPhone ? senderPhone : remotePhone) || (isChatTrigger && allowedPhones[0] ? allowedPhones[0] : '') || '5491122334455';
+const normalizedPhoneInput = body.phone ? normalizePhone(body.phone) : '';
+const phone = normalizedPhoneInput || (isLid && senderPhone ? senderPhone : remotePhone) || (isChatTrigger && allowedPhones[0] ? allowedPhones[0] : '') || '5491122334455';
 const replyNumber = body.replyNumber || (isLid && senderPhone ? \`\${senderPhone}@s.whatsapp.net\` : remoteJid) || (phone ? \`\${phone}@s.whatsapp.net\` : '');
 
 const mediaUrl = message.mediaUrl || data.mediaUrl || message.audioMessage?.url || message.imageMessage?.url || message.videoMessage?.url || body.mediaUrl || '';
@@ -147,7 +148,7 @@ return [{
       instance: body.instance || config.EVOLUTION_INSTANCE || '',
       apiKey: body.apikey || body.apiKey || config.EVOLUTION_API_KEY || ''
     },
-    authorized: allowedPhones.length === 0 || allowedPhones.includes(phone)
+    authorized: allowedPhones.length === 0 || allowedPhones.includes(phone) || source === 'chat'
   },
   binary: $input.first()?.binary || {}
 }];`;
