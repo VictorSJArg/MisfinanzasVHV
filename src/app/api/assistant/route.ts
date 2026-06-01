@@ -148,7 +148,11 @@ async function resolveCategoryId(userId: string, type: string, payload: Record<s
     const categoryId = asString(payload.categoryId);
     if (categoryId) return categoryId;
 
-    const categoryName = asString(payload.categoryName || payload.category);
+    let categoryName = asString(payload.categoryName || payload.category);
+    if (!categoryName) return null;
+
+    // Clean date suffixes like " - 10/06" or " 10/06" or " - 10-06"
+    categoryName = categoryName.replace(/\s*-\s*\d{2}[/\-]\d{2}\s*$/, '').replace(/\s+\d{2}[/\-]\d{2}\s*$/, '').trim();
     if (!categoryName) return null;
 
     const existing = await prisma.category.findFirst({
@@ -163,8 +167,9 @@ async function resolveCategoryId(userId: string, type: string, payload: Record<s
     if (!asBoolean(payload.createMissingCategory)) return null;
 
     let parentId: string | null = null;
-    const parentCategoryName = asString(payload.parentCategoryName || payload.parentCategory);
+    let parentCategoryName = asString(payload.parentCategoryName || payload.parentCategory);
     if (parentCategoryName) {
+        parentCategoryName = parentCategoryName.replace(/\s*-\s*\d{2}[/\-]\d{2}\s*$/, '').replace(/\s+\d{2}[/\-]\d{2}\s*$/, '').trim();
         const parentCat = await prisma.category.findFirst({
             where: {
                 userId,
