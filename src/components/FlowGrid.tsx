@@ -1443,7 +1443,11 @@ export default function FlowGrid() {
                             {showVariations && data.columns.length > 1 && (
                                 <td className="bg-blue-50/20"></td>
                             )}
-                            <td className={`px-4 py-1 text-right text-xs ${colorClass} opacity-70 bg-gray-100/50`}>
+                            <td className={`px-4 py-1 text-right text-xs font-semibold bg-gray-50 dark:bg-slate-900 border-l border-gray-200 dark:border-slate-800 whitespace-nowrap sticky right-0 z-10 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)] ${
+                                type === 'INCOME'
+                                    ? 'text-emerald-600 dark:text-emerald-400'
+                                    : 'text-rose-600 dark:text-rose-400'
+                            }`}>
                                 {formatMoney(group.total)}
                             </td>
                         </tr>
@@ -1493,7 +1497,7 @@ export default function FlowGrid() {
                             {showVariations && data.columns.length > 1 && (
                                 <td className="bg-transparent"></td>
                             )}
-                            <td className="px-4 py-1 text-right text-xs text-gray-200 bg-gray-50/20">
+                            <td className="px-4 py-1 text-right text-xs bg-gray-50 dark:bg-slate-900 border-l border-gray-200 dark:border-slate-800 whitespace-nowrap sticky right-0 z-10 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                             </td>
                         </tr>
                     )
