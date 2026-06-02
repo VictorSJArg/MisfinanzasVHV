@@ -43,3 +43,9 @@ next-env.d.ts
 /src/generated/prisma
 
 .vercel
+.env*.local
+
+# local scratch and temp files
+/scratch/
+*.pdf
+~$*.docx

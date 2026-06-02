@@ -190,6 +190,9 @@ export default function CreditCardsPage() {
         amountUSD: string;
     }[]>([{ date: '', description: '', amount: '', amountUSD: '' }]);
 
+    const [importMethod, setImportMethod] = useState<'ocr' | 'pdf'>('ocr');
+    const [pdfProcessing, setPdfProcessing] = useState(false);
+
     const fetchCards = useCallback(async () => {
         try {
             const res = await fetch('/api/credit-cards');
@@ -1321,25 +1324,119 @@ export default function CreditCardsPage() {
                         <h3 className="text-lg font-bold mb-4 dark:text-slate-100">Cargar Resumen - {selectedCard.name}</h3>
 
                         <div className="mb-6 p-4 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/30 dark:to-purple-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800 space-y-4">
-                            <div>
-                                <h4 className="font-medium text-indigo-800 dark:text-indigo-300 mb-2">📷 Escanear Resumen Completo (OCR)</h4>
-                                <OCRScanner
-                                    onItemsExtracted={(items) => {
-                                        setStatementItems(items.map(i => ({
-                                            date: i.date,
-                                            description: i.description + (i.installment ? ` ${i.installment}` : ''),
-                                            amount: i.amount,
-                                            amountUSD: i.amountUSD
-                                        })));
-                                    }}
-                                    onStatementInfo={(info) => {
-                                        if (info.closingDate) setStatementClosingDate(info.closingDate);
-                                        if (info.dueDate) setStatementDueDate(info.dueDate);
-                                        if (info.totalAmount) setStatementTotal(info.totalAmount);
-                                        if (info.minimumPayment) setStatementMinPayment(info.minimumPayment);
-                                    }}
-                                />
+                            {/* Tab selector */}
+                            <div className="flex border-b border-indigo-200 dark:border-indigo-700 pb-2">
+                                <button
+                                    onClick={() => setImportMethod('ocr')}
+                                    className={`px-4 py-2 font-medium text-sm rounded-lg transition-colors mr-2 ${importMethod === 'ocr' ? 'bg-indigo-600 text-white' : 'text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40'}`}
+                                >
+                                    📷 Escanear con Foto (OCR)
+                                </button>
+                                <button
+                                    onClick={() => setImportMethod('pdf')}
+                                    className={`px-4 py-2 font-medium text-sm rounded-lg transition-colors mr-2 ${importMethod === 'pdf' ? 'bg-indigo-600 text-white' : 'text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40'}`}
+                                >
+                                    📄 Cargar PDF Digital
+                                </button>
                             </div>
+
+                            {importMethod === 'ocr' ? (
+                                <div>
+                                    <h4 className="font-medium text-indigo-800 dark:text-indigo-300 mb-2">📷 Escanear Resumen Completo (OCR)</h4>
+                                    <OCRScanner
+                                        onItemsExtracted={(items) => {
+                                            setStatementItems(items.map(i => ({
+                                                date: i.date,
+                                                description: i.description + (i.installment ? ` ${i.installment}` : ''),
+                                                amount: i.amount,
+                                                amountUSD: i.amountUSD
+                                            })));
+                                        }}
+                                        onStatementInfo={(info) => {
+                                            if (info.closingDate) setStatementClosingDate(info.closingDate);
+                                            if (info.dueDate) setStatementDueDate(info.dueDate);
+                                            if (info.totalAmount) setStatementTotal(info.totalAmount);
+                                            if (info.minimumPayment) setStatementMinPayment(info.minimumPayment);
+                                        }}
+                                    />
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    <h4 className="font-medium text-indigo-800 dark:text-indigo-300 mb-1">📄 Cargar Resumen en PDF (Digital)</h4>
+                                    <p className="text-xs text-indigo-600 dark:text-indigo-400">
+                                        Subí directamente el archivo PDF o Adobe Acrobat del resumen mensual de tu tarjeta. Se desencriptará de manera segura y se extraerán todos los datos.
+                                    </p>
+                                    
+                                    <div className="border-2 border-dashed border-indigo-300 rounded-xl p-6 text-center hover:border-indigo-400 transition-colors bg-white dark:bg-slate-900/50">
+                                        <input
+                                            type="file"
+                                            accept=".pdf,application/pdf"
+                                            onChange={async (e) => {
+                                                const file = e.target.files?.[0];
+                                                if (!file) return;
+                                                
+                                                setPdfProcessing(true);
+                                                try {
+                                                    const formData = new FormData();
+                                                    formData.append('file', file);
+                                                    
+                                                    const res = await fetch('/api/credit-cards/parse-pdf', {
+                                                        method: 'POST',
+                                                        body: formData
+                                                    });
+                                                    
+                                                    const data = await res.json();
+                                                    if (!res.ok) throw new Error(data.error || 'Error al procesar el PDF');
+                                                    
+                                                    // Auto-populate
+                                                    if (data.info.closingDate) setStatementClosingDate(data.info.closingDate);
+                                                    if (data.info.dueDate) setStatementDueDate(data.info.dueDate);
+                                                    if (data.info.totalAmount) setStatementTotal(data.info.totalAmount);
+                                                    if (data.info.minimumPayment) setStatementMinPayment(data.info.minimumPayment);
+                                                    
+                                                    if (data.items && data.items.length > 0) {
+                                                        setStatementItems(data.items.map((i: any) => ({
+                                                            date: i.date,
+                                                            description: i.description + (i.installment ? ` ${i.installment}` : ''),
+                                                            amount: i.amount,
+                                                            amountUSD: i.amountUSD
+                                                        })));
+                                                        alert(`✅ PDF procesado con éxito. Se detectaron ${data.items.length} consumos.`);
+                                                    } else {
+                                                        alert('⚠️ PDF procesado, pero no se encontraron transacciones.');
+                                                    }
+                                                } catch (err: any) {
+                                                    console.error(err);
+                                                    alert(`Error: ${err.message}`);
+                                                } finally {
+                                                    setPdfProcessing(false);
+                                                }
+                                            }}
+                                            className="hidden"
+                                            id="pdf-upload"
+                                            disabled={pdfProcessing}
+                                        />
+                                        <label
+                                            htmlFor="pdf-upload"
+                                            className={`cursor-pointer block ${pdfProcessing ? 'pointer-events-none' : ''}`}
+                                        >
+                                            {pdfProcessing ? (
+                                                <div className="space-y-3 py-4">
+                                                    <div className="animate-spin w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full mx-auto"></div>
+                                                    <p className="text-indigo-600 font-medium text-sm">Procesando y desencriptando PDF digital... 🔐</p>
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-2 py-4">
+                                                    <div className="text-4xl">📄</div>
+                                                    <p className="text-gray-600 dark:text-gray-300 font-medium text-sm">Subir archivo PDF del Resumen</p>
+                                                    <p className="text-gray-400 text-xs">Hacé clic para seleccionar o arrastrá el archivo aquí</p>
+                                                    <p className="text-xs text-indigo-500 font-semibold bg-indigo-50 dark:bg-indigo-950/50 inline-block px-2 py-1 rounded">Autodesencriptado activado</p>
+                                                </div>
+                                            )}
+                                        </label>
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="border-t border-indigo-200 dark:border-indigo-700 pt-4">
                                 <h4 className="font-medium text-indigo-800 dark:text-indigo-300 mb-2">📧 Importar Gasto Individual (Email/Foto)</h4>

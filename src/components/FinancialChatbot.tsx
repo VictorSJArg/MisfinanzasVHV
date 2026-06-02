@@ -65,6 +65,13 @@ export default function FinancialChatbot() {
         loadHistory();
     }, []);
 
+    // Palabras que indican que n8n procesó y guardó una transacción
+    const REFRESH_KEYWORDS = ['listo', 'cargué', 'cargue', 'registré', 'registre', 'guardé', 'guarde', 'agregué', 'agregue', 'añadí', 'añadi'];
+
+    const dispatchRefresh = () => {
+        window.dispatchEvent(new CustomEvent('financeDataRefresh'));
+    };
+
     // Enviar mensaje al backend
     const handleSendMessage = async (textToSend?: string) => {
         const queryText = textToSend || inputValue;
@@ -104,6 +111,13 @@ export default function FinancialChatbot() {
             };
 
             setMessages(prev => [...prev, botMessage]);
+
+            // Refrescar si n8n lo indica explícitamente O si el reply contiene palabras de confirmación
+            const replyLower = (result.reply || '').toLowerCase();
+            const hasConfirmationWord = REFRESH_KEYWORDS.some(kw => replyLower.includes(kw));
+            if (result.refreshRequired || hasConfirmationWord) {
+                dispatchRefresh();
+            }
         } catch (error) {
             console.error('Error in chatbot connection:', error);
             const errorMessage: Message = {
@@ -121,10 +135,13 @@ export default function FinancialChatbot() {
     const handleButtonClick = async (action: string) => {
         if (action === 'confirm') {
             await handleSendMessage('si');
+            // Siempre refrescar después de confirmar: el agente sí guardó algo
+            dispatchRefresh();
         } else if (action === 'cancel') {
             await handleSendMessage('no');
         }
     };
+
 
     return (
         <>

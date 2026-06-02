@@ -62,12 +62,14 @@ export async function POST(request: NextRequest) {
         const reply = item?.output || item?.replyText || 'Sin respuesta del flujo.';
         const requiresConfirmation = item?.appResponse?.requiresConfirmation === true || item?.requiresConfirmation === true;
         const preview = item?.appResponse?.preview || item?.preview || null;
+        const refreshRequired = item?.appResponse?.processed === true;
 
         return NextResponse.json({
             success: true,
             reply,
             requiresConfirmation,
-            preview
+            preview,
+            refreshRequired
         });
 
     } catch (error: unknown) {

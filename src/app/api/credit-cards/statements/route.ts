@@ -107,12 +107,12 @@ export async function POST(request: NextRequest) {
         };
 
         // 1. Check if statement exists
-        // Normalize date to avoid time drift
+        // Normalize date to avoid time drift using UTC
         const incomingClosingDate = new Date(closingDate);
-        // Ensure midnight? Or strict match?
-        // Let's rely on YYYY-MM-DD match
-        const startOfDay = new Date(incomingClosingDate); startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(incomingClosingDate); endOfDay.setHours(23, 59, 59, 999);
+        const startOfDay = new Date(incomingClosingDate);
+        startOfDay.setUTCHours(0, 0, 0, 0);
+        const endOfDay = new Date(incomingClosingDate);
+        endOfDay.setUTCHours(23, 59, 59, 999);
 
         let statement = await prisma.creditCardStatement.findFirst({
             where: {
@@ -188,35 +188,111 @@ export async function POST(request: NextRequest) {
 
         } else {
             // CREATE MODE
-            statement = await prisma.creditCardStatement.create({
-                data: {
-                    creditCardId,
-                    closingDate: incomingClosingDate,
-                    dueDate: new Date(dueDate),
-                    totalAmount: parseFloat(totalAmount),
-                    minimumPayment: minimumPayment ? parseFloat(minimumPayment) : null,
-                    items: items && items.length > 0 ? {
-                        create: items.map((item: any) => {
-                            const { isRecurring, itemType, category } = classifyItem(item.description, item.amount);
-                            const { installmentCurrent, installmentTotal } = parseInstallments(item.description);
+            try {
+                statement = await prisma.creditCardStatement.create({
+                    data: {
+                        creditCardId,
+                        closingDate: incomingClosingDate,
+                        dueDate: new Date(dueDate),
+                        totalAmount: parseFloat(totalAmount),
+                        minimumPayment: minimumPayment ? parseFloat(minimumPayment) : null,
+                        items: items && items.length > 0 ? {
+                            create: items.map((item: any) => {
+                                const { isRecurring, itemType, category } = classifyItem(item.description, item.amount);
+                                const { installmentCurrent, installmentTotal } = parseInstallments(item.description);
 
-                            return {
-                                date: new Date(item.date),
-                                description: item.description,
-                                amount: parseFloat(item.amount),
-                                amountUSD: item.amountUSD ? parseFloat(item.amountUSD) : null,
-                                installmentCurrent,
-                                installmentTotal,
-                                installmentAmount: installmentTotal ? parseFloat(item.amount) : null,
-                                itemType: item.itemType || itemType,
-                                isRecurring: item.isRecurring ?? isRecurring,
-                                category: item.category || category
-                            };
-                        })
-                    } : undefined
-                },
-                include: { items: true }
-            });
+                                return {
+                                    date: new Date(item.date),
+                                    description: item.description,
+                                    amount: parseFloat(item.amount),
+                                    amountUSD: item.amountUSD ? parseFloat(item.amountUSD) : null,
+                                    installmentCurrent,
+                                    installmentTotal,
+                                    installmentAmount: installmentTotal ? parseFloat(item.amount) : null,
+                                    itemType: item.itemType || itemType,
+                                    isRecurring: item.isRecurring ?? isRecurring,
+                                    category: item.category || category
+                                };
+                            })
+                        } : undefined
+                    },
+                    include: { items: true }
+                });
+            } catch (e: any) {
+                if (e.code === 'P2002') {
+                    // Unique constraint conflict - retrieve existing statement and update/merge
+                    console.log(`Unique constraint conflict during create statement. Falling back to update/merge.`);
+                    const existing = await prisma.creditCardStatement.findFirst({
+                        where: {
+                            creditCardId,
+                            closingDate: {
+                                gte: startOfDay,
+                                lte: endOfDay
+                            }
+                        },
+                        include: { items: true }
+                    });
+                    
+                    if (existing) {
+                        statement = existing;
+                        await prisma.creditCardStatement.update({
+                            where: { id: statement.id },
+                            data: {
+                                dueDate: new Date(dueDate),
+                                totalAmount: parseFloat(totalAmount),
+                                minimumPayment: minimumPayment ? parseFloat(minimumPayment) : null
+                            }
+                        });
+
+                        if (items && items.length > 0) {
+                            let addedCount = 0;
+                            for (const item of items) {
+                                const itemDate = new Date(item.date);
+                                const itemAmount = parseFloat(item.amount);
+
+                                const isDuplicate = statement.items.some(existing =>
+                                    existing.date.getTime() === itemDate.getTime() &&
+                                    Math.abs(Number(existing.amount) - itemAmount) < 0.01 &&
+                                    (existing.description === item.description || existing.description.includes(item.description))
+                                );
+
+                                if (!isDuplicate) {
+                                    const { isRecurring, itemType, category } = classifyItem(item.description, item.amount);
+                                    const { installmentCurrent, installmentTotal } = parseInstallments(item.description);
+
+                                    await prisma.creditCardItem.create({
+                                        data: {
+                                            statementId: statement.id,
+                                            date: itemDate,
+                                            description: item.description,
+                                            amount: itemAmount,
+                                            amountUSD: item.amountUSD ? parseFloat(item.amountUSD) : null,
+                                            installmentCurrent,
+                                            installmentTotal,
+                                            installmentAmount: installmentTotal ? itemAmount : null,
+                                            itemType: item.itemType || itemType,
+                                            isRecurring: item.isRecurring ?? isRecurring,
+                                            category: item.category || category,
+                                            includeInProjection: true
+                                        }
+                                    });
+                                    addedCount++;
+                                }
+                            }
+                            console.log(`Merged ${addedCount} items under conflict recovery.`);
+                        }
+
+                        statement = await prisma.creditCardStatement.findUnique({
+                            where: { id: statement.id },
+                            include: { items: true }
+                        });
+                    } else {
+                        throw e;
+                    }
+                } else {
+                    throw e;
+                }
+            }
         }
 
         return NextResponse.json(statement, { status: 201 });

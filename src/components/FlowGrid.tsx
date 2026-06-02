@@ -251,6 +251,16 @@ export default function FlowGrid() {
         }
     }, [granularity, currentDate, periodsCount, useCustomRange, customStartDate, customEndDate]);
 
+    // Listen for chatbot-triggered data refresh events
+    useEffect(() => {
+        const handleChatRefresh = () => {
+            const hasExpanded = expandedCategories.size > 0;
+            fetchData(hasExpanded);
+        };
+        window.addEventListener('financeDataRefresh', handleChatRefresh);
+        return () => window.removeEventListener('financeDataRefresh', handleChatRefresh);
+    }, [fetchData, expandedCategories]);
+
     const fetchCategoryDetails = async (categoryId: string) => {
         if (!data) return;
 
