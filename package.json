@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.19.1",
+    "@thednp/dommatrix": "^3.0.4",
     "better-sqlite3": "^12.5.0",
     "date-fns": "^4.1.0",
     "lucide-react": "^0.562.0",
