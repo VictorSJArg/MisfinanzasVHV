@@ -1353,10 +1353,11 @@ export default function FlowGrid() {
                             {data.columns.map((_, idx) => {
                                 if (!visibleColumnIndices.includes(idx)) return null;
                                 const cellAmount = group.cells[idx] || 0;
+                                const isPaid = group.cellTxs?.[idx]?.length > 0 && group.cellTxs[idx].every((t: any) => t.status === 'PAID');
                                 return (
                                     <td
                                         key={idx}
-                                        className={`px-2 py-1 text-right text-xs relative group/cell ${(group.cellTxs?.[idx]?.length > 0 && group.cellTxs[idx].every((t: any) => t.status === 'PAID')) ? 'bg-green-100/60 text-emerald-700 font-medium' : 'hover:bg-gray-100'}`}
+                                        className={`px-2 py-1 text-right text-xs relative group/cell ${isPaid ? 'bg-green-100/60 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 font-medium' : 'hover:bg-gray-100 dark:hover:bg-slate-800/50'}`}
                                         onContextMenu={(e) => {
                                             const txs = group.cellTxs?.[idx] || [];
                                             if (txs.length > 0) {
@@ -1406,7 +1407,15 @@ export default function FlowGrid() {
                                         ) : (
                                             <div className="relative w-full h-full flex items-center justify-end">
                                                 <span
-                                                    className={`tabular-nums block w-full overflow-hidden text-ellipsis cursor-text ${cellAmount > 0 ? 'text-gray-700' : 'text-gray-300'}`}
+                                                    className={`tabular-nums block w-full overflow-hidden text-ellipsis cursor-text ${
+                                                        isPaid
+                                                            ? 'text-emerald-700 dark:text-emerald-400 font-medium'
+                                                            : (cellAmount > 0 
+                                                                ? (type === 'INCOME' 
+                                                                    ? 'text-emerald-600 dark:text-emerald-400 font-medium' 
+                                                                    : 'text-gray-700 dark:text-slate-300')
+                                                                : 'text-gray-300 dark:text-slate-600')
+                                                    }`}
                                                     onDoubleClick={() => handleSubCellDoubleClick(row.category.id, idx, cellAmount, group.description, group.cellTxs?.[idx]?.[0]?.id)}
                                                 >
                                                     {cellAmount > 0 ? formatMoney(cellAmount) : '-'}
