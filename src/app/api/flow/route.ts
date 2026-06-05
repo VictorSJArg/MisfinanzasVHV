@@ -79,6 +79,7 @@ const tcCategories = [
   'IMPUESTOS',
   'CARGOS',
   'STATEMENT',
+  'NUEVOS_GASTOS',
   'OTROS'
 ];
 
@@ -95,6 +96,7 @@ const tcCategoryLabels: Record<string, string> = {
   IMPUESTOS: 'Impuestos',
   CARGOS: 'Cargos',
   STATEMENT: 'Pago Resumen',
+  NUEVOS_GASTOS: 'Nuevos Gastos de Tarjeta',
   OTROS: 'Otros'
 };
 

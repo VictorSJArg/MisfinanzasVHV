@@ -58,6 +58,7 @@ const CATEGORIES = [
     { id: 'TRANSPORTE', name: '🚗 Transporte', color: 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-300' },
     { id: 'IMPUESTOS', name: '📋 Impuestos', color: 'bg-gray-100 dark:bg-slate-800 text-gray-800 dark:text-slate-300' },
     { id: 'CARGOS', name: '💸 Cargos', color: 'bg-rose-100 dark:bg-rose-900/30 text-rose-800 dark:text-rose-400' },
+    { id: 'NUEVOS_GASTOS', name: '💳 Nuevos Gastos', color: 'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-400' },
     { id: 'OTROS', name: '📦 Otros', color: 'bg-gray-100 dark:bg-slate-800 text-gray-800 dark:text-slate-300' }
 ];
 
@@ -157,6 +158,8 @@ export default function ProjectionGrid({
             // Strictly exclude if user unchecked it or set includeInProjection: false
             if (item.includeInProjection === false) continue;
 
+            const isVirtual = item.id.startsWith('virtual-') || (item as any).isVirtual;
+
             // Check for monthly override first
             const overrideKey = `${item.id}-${monthKey}`;
             const override = monthlyOverrides.get(overrideKey);
@@ -164,7 +167,14 @@ export default function ProjectionGrid({
             let baseVal = 0;
             let hasProjection = false;
 
-            if (isCurrentMonth) {
+            if (isVirtual) {
+                // Virtual items only project in the month of their due date
+                const itemDueDate = (item as any).dueDate ? new Date((item as any).dueDate) : null;
+                if (itemDueDate && format(itemDueDate, 'yyyy-MM') === monthKey) {
+                    baseVal = item.amount;
+                    hasProjection = true;
+                }
+            } else if (isCurrentMonth) {
                 // If calculate for current month, include EVERYTHING in statement (unless excluded above)
                 baseVal = item.amount;
                 hasProjection = true;
@@ -334,6 +344,8 @@ export default function ProjectionGrid({
                                 const categoryItems = getCategoryItems(category.id);
                                 const currentTotal = categoryItems.reduce((sum, i) => {
                                     if (i.includeInProjection === false) return sum;
+                                    const isVirtual = i.id.startsWith('virtual-') || (i as any).isVirtual;
+                                    if (isVirtual) return sum;
                                     return sum + Number(i.amount);
                                 }, 0);
 
@@ -362,7 +374,11 @@ export default function ProjectionGrid({
                                             {showPercentages && (
                                                 <td className="px-1 py-1 text-right text-[10px] text-gray-500 dark:text-slate-400 bg-red-50/30 dark:bg-rose-900/10 border-r border-red-100 dark:border-rose-900/30">
                                                     {(() => {
-                                                        const totalCurrent = statementItems.reduce((acc, i) => acc + (Number(i.amount) || 0), 0);
+                                                        const totalCurrent = statementItems.reduce((acc, i) => {
+                                                            const isVirtual = i.id.startsWith('virtual-') || (i as any).isVirtual;
+                                                            if (isVirtual) return acc;
+                                                            return acc + (Number(i.amount) || 0);
+                                                        }, 0);
                                                         const pct = totalCurrent > 0 ? (currentTotal / totalCurrent) * 100 : 0;
                                                         return pct > 0 ? `${pct.toFixed(0)}%` : '-';
                                                     })()}
@@ -403,145 +419,161 @@ export default function ProjectionGrid({
                                             )}
                                         </tr>
 
-                                        {isExpanded && categoryItems.map(item => (
-                                            <tr key={item.id} className="bg-card border-b border-border hover:bg-muted/50 group/item transition-colors">
-                                                <td className="px-3 py-2 sticky left-0 bg-card z-10 border-r border-border group-hover/item:bg-muted/50 transition-colors">
-                                                    <div className="flex items-center gap-2 pl-4">
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                onEditItem?.(item.id, { includeInProjection: !(item.includeInProjection ?? true) });
-                                                            }}
-                                                            className={`flex-shrink-0 w-4 h-4 flex items-center justify-center rounded border transition-colors ${(item.includeInProjection ?? true)
-                                                                ? 'bg-indigo-600 border-indigo-600 text-white'
-                                                                : 'bg-card border-border text-transparent hover:border-border'
-                                                                }`}
-                                                            title={(item.includeInProjection ?? true) ? "Incluido" : "Excluido"}
-                                                        >
-                                                            {(item.includeInProjection ?? true) && <span className="text-[9px]">✓</span>}
-                                                        </button>
-                                                        <div className="flex flex-col min-w-0 flex-1">
-                                                            <div className="flex items-center gap-2">
-                                                                <span className={`text-xs truncate max-w-[140px] ${(item.includeInProjection ?? true) ? 'text-foreground' : 'text-muted-foreground line-through'}`} title={item.description}>
-                                                                    {item.description}
-                                                                </span>
-                                                                {onEditItem && (
-                                                                    <div className="flex items-center gap-1">
-                                                                        <input
-                                                                            type="number"
-                                                                            value={item.projectedAmount !== undefined && item.projectedAmount !== null ? item.projectedAmount : item.amount}
-                                                                            onClick={(e) => e.stopPropagation()}
-                                                                            onChange={(e) => {
-                                                                                const val = e.target.value === '' ? null : parseFloat(e.target.value);
-                                                                                onEditItem(item.id, { projectedAmount: val });
-                                                                            }}
-                                                                            className={`w-14 text-right text-[10px] border rounded px-0.5 py-0.5 outline-none focus:border-indigo-500 ${item.projectedAmount ? 'bg-yellow-50 dark:bg-yellow-900/30 border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-400 font-medium' : 'border-border text-muted-foreground bg-input'}`}
-                                                                        />
-                                                                        <select
-                                                                            value={item.category || 'OTROS'}
-                                                                            onClick={(e) => e.stopPropagation()}
-                                                                            onChange={(e) => onEditItem(item.id, { category: e.target.value })}
-                                                                            className="w-[80px] text-[9px] border border-gray-200 dark:border-slate-700 rounded px-1 py-0.5 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-                                                                        >
-                                                                            {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                                                                        </select>
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                            <input
-                                                                type="text"
-                                                                defaultValue={item.observations || ''}
-                                                                key={`obs-${item.id}-${item.observations}`}
-                                                                onClick={(e) => e.stopPropagation()}
-                                                                onBlur={(e) => {
-                                                                    if (e.target.value !== (item.observations || '')) {
-                                                                        onEditItem?.(item.id, { observations: e.target.value });
-                                                                    }
-                                                                }}
-                                                                onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                                                                placeholder="Agregar observación..."
-                                                                className="flex-1 text-[10px] text-gray-500 dark:text-slate-400 bg-transparent border-b border-transparent hover:border-gray-300 dark:hover:border-slate-600 focus:border-indigo-400 focus:outline-none focus:bg-white dark:focus:bg-slate-800 px-1 py-0.5 mt-1 transition-colors italic"
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                {(() => {
-                                                    const isExcluded = item.includeInProjection === false;
-                                                    const isEditing = editingCell?.itemId === item.id && editingCell?.yearMonth === 'CURRENT';
-                                                    const displayVal = item.amount;
-                                                    return (
-                                                        <td
-                                                            colSpan={showPercentages ? 2 : 1}
-                                                            className={`text-right px-2 py-2 text-xs border-r border-red-100 dark:border-rose-900/30 font-medium cursor-pointer transition-colors ${isExcluded ? 'bg-gray-50 dark:bg-slate-800 text-gray-300 dark:text-slate-600' : 'bg-red-50/10 dark:bg-rose-900/5 text-gray-700 dark:text-slate-300 hover:bg-red-50 dark:hover:bg-rose-900/20'}`}
-                                                            onDoubleClick={() => !isExcluded && setEditingCell({ itemId: item.id, yearMonth: 'CURRENT', value: displayVal.toString() })}
-                                                        >
-                                                            {isEditing ? (
-                                                                <input
-                                                                    type="number"
-                                                                    value={editingCell.value}
-                                                                    onChange={(e) => setEditingCell({ ...editingCell!, value: e.target.value })}
-                                                                    onBlur={async () => {
-                                                                        const newVal = parseFloat(editingCell!.value);
-                                                                        if (!isNaN(newVal) && newVal !== displayVal) await onEditItem?.(item.id, { amount: newVal });
-                                                                        setEditingCell(null);
-                                                                    }}
-                                                                    onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-                                                                    autoFocus
-                                                                    className="w-16 text-right bg-white dark:bg-slate-800 border border-indigo-300 dark:border-indigo-600 rounded px-1 py-0.5 text-xs text-gray-800 dark:text-slate-100"
-                                                                />
-                                                            ) : isExcluded ? '-' : formatMoney(Number(displayVal))}
-                                                        </td>
-                                                    );
-                                                })()}
-                                                {months.map((m, idx) => {
-                                                    const yearMonth = format(m, 'yyyy-MM');
-                                                    const cellKey = `${item.id}-${yearMonth}`;
-                                                    const isEditing = editingCell?.itemId === item.id && editingCell?.yearMonth === yearMonth;
-                                                    const isSaving = savingCell === cellKey;
-                                                    const override = getOverride(item.id, yearMonth);
-                                                    let baseVal = 0;
-                                                    let hasProjection = false;
-                                                    if (item.includeInProjection !== false) {
-                                                        if (item.isRecurring) { baseVal = item.projectedAmount ?? item.amount; hasProjection = true; }
-                                                        else if (item.installmentCurrent && item.installmentTotal) {
-                                                            const remaining = item.installmentTotal - item.installmentCurrent;
-                                                            if (idx < remaining) { baseVal = item.projectedAmount ?? item.amount; hasProjection = true; }
-                                                        }
-                                                    }
-                                                    const displayVal = override !== null ? override : baseVal;
-                                                    const hasOverride = override !== null && override !== baseVal;
-                                                    return (
-                                                        <td
-                                                            key={idx}
-                                                            colSpan={showPercentages ? 2 : 1}
-                                                            className={`text-right px-1 py-1 text-xs border-l border-border cursor-pointer hover:bg-yellow-50 dark:hover:bg-yellow-900/20 transition-colors ${hasOverride ? 'bg-yellow-50 dark:bg-yellow-900/30' : ''} ${isSaving ? 'opacity-50' : ''}`}
-                                                            onDoubleClick={() => (hasProjection || hasOverride) && setEditingCell({ itemId: item.id, yearMonth, value: displayVal.toString() })}
-                                                        >
-                                                            {isEditing ? (
-                                                                <input
-                                                                    type="number"
-                                                                    value={editingCell.value}
-                                                                    onChange={e => setEditingCell({ ...editingCell!, value: e.target.value })}
-                                                                    onBlur={() => {
-                                                                        const newAmount = Number(editingCell!.value);
-                                                                        if (!isNaN(newAmount) && newAmount >= 0) saveMonthlyOverride(item.id, yearMonth, newAmount);
-                                                                        setEditingCell(null);
-                                                                    }}
-                                                                    onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingCell(null); }}
-                                                                    className="w-16 text-right p-0.5 border border-blue-400 dark:border-blue-600 rounded text-xs bg-input text-foreground"
-                                                                    autoFocus
-                                                                />
-                                                            ) : displayVal > 0 ? (
-                                                                <span className={`${hasOverride ? 'text-amber-600 dark:text-amber-400 font-bold' : item.isRecurring ? 'text-green-600 dark:text-emerald-400 font-medium' : 'text-blue-600 dark:text-blue-400'}`}>
-                                                                    {formatMoney(displayVal)}
-                                                                </span>
-                                                            ) : <span className="text-gray-200 dark:text-slate-700 text-[10px]">-</span>}
-                                                        </td>
-                                                    );
-                                                })}
-                                                <td colSpan={showPercentages ? 2 : 1} className="bg-muted"></td>
-                                            </tr>
-                                        ))}
+                                        {isExpanded && categoryItems.map(item => {
+                                             const isVirtual = item.id.startsWith('virtual-') || (item as any).isVirtual;
+                                             return (
+                                             <tr key={item.id} className="bg-card border-b border-border hover:bg-muted/50 group/item transition-colors">
+                                                 <td className="px-3 py-2 sticky left-0 bg-card z-10 border-r border-border group-hover/item:bg-muted/50 transition-colors">
+                                                     <div className="flex items-center gap-2 pl-4">
+                                                         <button
+                                                             onClick={(e) => {
+                                                                 e.stopPropagation();
+                                                                 if (!isVirtual) onEditItem?.(item.id, { includeInProjection: !(item.includeInProjection ?? true) });
+                                                             }}
+                                                             disabled={isVirtual}
+                                                             className={`flex-shrink-0 w-4 h-4 flex items-center justify-center rounded border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${(item.includeInProjection ?? true)
+                                                                 ? 'bg-indigo-600 border-indigo-600 text-white'
+                                                                 : 'bg-card border-border text-transparent hover:border-border'
+                                                                 }`}
+                                                             title={isVirtual ? "Gasto virtual" : (item.includeInProjection ?? true) ? "Incluido" : "Excluido"}
+                                                         >
+                                                             {(item.includeInProjection ?? true) && <span className="text-[9px]">✓</span>}
+                                                         </button>
+                                                         <div className="flex flex-col min-w-0 flex-1">
+                                                             <div className="flex items-center gap-2">
+                                                                 <span className={`text-xs truncate max-w-[140px] ${(item.includeInProjection ?? true) ? 'text-foreground' : 'text-muted-foreground line-through'}`} title={item.description}>
+                                                                     {item.description}
+                                                                 </span>
+                                                                 {onEditItem && (
+                                                                     <div className="flex items-center gap-1">
+                                                                         <input
+                                                                             type="number"
+                                                                             value={item.projectedAmount !== undefined && item.projectedAmount !== null ? item.projectedAmount : item.amount}
+                                                                             onClick={(e) => e.stopPropagation()}
+                                                                             disabled={isVirtual}
+                                                                             onChange={(e) => {
+                                                                                 const val = e.target.value === '' ? null : parseFloat(e.target.value);
+                                                                                 onEditItem(item.id, { projectedAmount: val });
+                                                                             }}
+                                                                             className={`w-14 text-right text-[10px] border rounded px-0.5 py-0.5 outline-none focus:border-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed ${item.projectedAmount ? 'bg-yellow-50 dark:bg-yellow-900/30 border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-400 font-medium' : 'border-border text-muted-foreground bg-input'}`}
+                                                                         />
+                                                                         <select
+                                                                             value={item.category || 'OTROS'}
+                                                                             onClick={(e) => e.stopPropagation()}
+                                                                             disabled={isVirtual}
+                                                                             onChange={(e) => onEditItem(item.id, { category: e.target.value })}
+                                                                             className="w-[80px] text-[9px] border border-gray-200 dark:border-slate-700 rounded px-1 py-0.5 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                                                         >
+                                                                             {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                                                         </select>
+                                                                     </div>
+                                                                 )}
+                                                             </div>
+                                                             <input
+                                                                 type="text"
+                                                                 defaultValue={item.observations || ''}
+                                                                 key={`obs-${item.id}-${item.observations}`}
+                                                                 disabled={isVirtual}
+                                                                 onClick={(e) => e.stopPropagation()}
+                                                                 onBlur={(e) => {
+                                                                     if (e.target.value !== (item.observations || '')) {
+                                                                         onEditItem?.(item.id, { observations: e.target.value });
+                                                                     }
+                                                                 }}
+                                                                 onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                                                                 placeholder={isVirtual ? "Gasto virtual (no editable)" : "Agregar observación..."}
+                                                                 className="flex-1 text-[10px] text-gray-500 dark:text-slate-400 bg-transparent border-b border-transparent hover:border-gray-300 dark:hover:border-slate-600 focus:border-indigo-400 focus:outline-none focus:bg-white dark:focus:bg-slate-800 px-1 py-0.5 mt-1 transition-colors italic"
+                                                             />
+                                                         </div>
+                                                     </div>
+                                                 </td>
+                                                 {(() => {
+                                                     const isExcluded = item.includeInProjection === false;
+                                                     const isEditing = editingCell?.itemId === item.id && editingCell?.yearMonth === 'CURRENT';
+                                                     const displayVal = item.amount;
+                                                     return (
+                                                         <td
+                                                             colSpan={showPercentages ? 2 : 1}
+                                                             className={`text-right px-2 py-2 text-xs border-r border-red-100 dark:border-rose-900/30 font-medium cursor-pointer transition-colors ${isExcluded ? 'bg-gray-50 dark:bg-slate-800 text-gray-300 dark:text-slate-600' : 'bg-red-50/10 dark:bg-rose-900/5 text-gray-700 dark:text-slate-300 hover:bg-red-50 dark:hover:bg-rose-900/20'} ${isVirtual ? 'bg-gray-100/30 dark:bg-slate-800/10 text-muted-foreground cursor-not-allowed' : ''}`}
+                                                             onDoubleClick={() => !isExcluded && !isVirtual && setEditingCell({ itemId: item.id, yearMonth: 'CURRENT', value: displayVal.toString() })}
+                                                         >
+                                                             {isEditing ? (
+                                                                 <input
+                                                                     type="number"
+                                                                     value={editingCell.value}
+                                                                     onChange={(e) => setEditingCell({ ...editingCell!, value: e.target.value })}
+                                                                     onBlur={async () => {
+                                                                         const newVal = parseFloat(editingCell!.value);
+                                                                         if (!isNaN(newVal) && newVal !== displayVal) await onEditItem?.(item.id, { amount: newVal });
+                                                                         setEditingCell(null);
+                                                                     }}
+                                                                     onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                                                                     autoFocus
+                                                                     className="w-16 text-right bg-white dark:bg-slate-800 border border-indigo-300 dark:border-indigo-600 rounded px-1 py-0.5 text-xs text-gray-800 dark:text-slate-100"
+                                                                 />
+                                                             ) : isExcluded || isVirtual ? '-' : formatMoney(Number(displayVal))}
+                                                         </td>
+                                                     );
+                                                 })()}
+                                                 {months.map((m, idx) => {
+                                                     const yearMonth = format(m, 'yyyy-MM');
+                                                     const cellKey = `${item.id}-${yearMonth}`;
+                                                     const isEditing = editingCell?.itemId === item.id && editingCell?.yearMonth === yearMonth;
+                                                     const isSaving = savingCell === cellKey;
+                                                     const override = getOverride(item.id, yearMonth);
+                                                     let baseVal = 0;
+                                                     let hasProjection = false;
+                                                     if (item.includeInProjection !== false) {
+                                                         if (isVirtual) {
+                                                             const itemDueDate = (item as any).dueDate ? new Date((item as any).dueDate) : null;
+                                                             if (itemDueDate && format(itemDueDate, 'yyyy-MM') === yearMonth) {
+                                                                 baseVal = item.amount;
+                                                                 hasProjection = true;
+                                                             }
+                                                         } else if (item.isRecurring) { 
+                                                             baseVal = item.projectedAmount ?? item.amount; 
+                                                             hasProjection = true; 
+                                                         }
+                                                         else if (item.installmentCurrent && item.installmentTotal) {
+                                                             const remaining = item.installmentTotal - item.installmentCurrent;
+                                                             if (idx < remaining) { baseVal = item.projectedAmount ?? item.amount; hasProjection = true; }
+                                                         }
+                                                     }
+                                                     const displayVal = override !== null ? override : baseVal;
+                                                     const hasOverride = override !== null && override !== baseVal;
+                                                     return (
+                                                         <td
+                                                             key={idx}
+                                                             colSpan={showPercentages ? 2 : 1}
+                                                             className={`text-right px-1 py-1 text-xs border-l border-border cursor-pointer hover:bg-yellow-50 dark:hover:bg-yellow-900/20 transition-colors ${hasOverride ? 'bg-yellow-50 dark:bg-yellow-900/30' : ''} ${isSaving ? 'opacity-50' : ''} ${isVirtual && !hasProjection ? 'cursor-not-allowed bg-gray-100/10 dark:bg-slate-800/5' : ''}`}
+                                                             onDoubleClick={() => (hasProjection || hasOverride) && !isVirtual && setEditingCell({ itemId: item.id, yearMonth, value: displayVal.toString() })}
+                                                         >
+                                                             {isEditing ? (
+                                                                 <input
+                                                                     type="number"
+                                                                     value={editingCell.value}
+                                                                     onChange={e => setEditingCell({ ...editingCell!, value: e.target.value })}
+                                                                     onBlur={() => {
+                                                                         const newAmount = Number(editingCell!.value);
+                                                                         if (!isNaN(newAmount) && newAmount >= 0) saveMonthlyOverride(item.id, yearMonth, newAmount);
+                                                                         setEditingCell(null);
+                                                                     }}
+                                                                     onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingCell(null); }}
+                                                                     className="w-16 text-right p-0.5 border border-blue-400 dark:border-blue-600 rounded text-xs bg-input text-foreground"
+                                                                     autoFocus
+                                                                 />
+                                                             ) : displayVal > 0 ? (
+                                                                 <span className={`${hasOverride ? 'text-amber-600 dark:text-amber-400 font-bold' : item.isRecurring ? 'text-green-600 dark:text-emerald-400 font-medium' : isVirtual ? 'text-purple-600 dark:text-purple-400 font-medium' : 'text-blue-600 dark:text-blue-400'}`}>
+                                                                     {formatMoney(displayVal)}
+                                                                 </span>
+                                                             ) : <span className="text-gray-200 dark:text-slate-700 text-[10px]">-</span>}
+                                                         </td>
+                                                     );
+                                                 })}
+                                                 <td colSpan={showPercentages ? 2 : 1} className="bg-muted"></td>
+                                             </tr>
+                                             );
+                                         })}
                                     </Fragment>
                                 );
                             })}
@@ -551,9 +583,9 @@ export default function ProjectionGrid({
                                 <td className="px-3 py-3 text-rose-800 dark:text-rose-300 sticky left-0 z-20 bg-white dark:bg-slate-800 border-r border-rose-200 dark:border-rose-800">
                                     💰 Total Mensual
                                 </td>
-                                <td className="px-2 py-3 text-right text-rose-800 dark:text-rose-300 bg-rose-50 dark:bg-rose-900/20 border-r border-rose-200 dark:border-rose-800 whitespace-nowrap">
-                                    {formatMoney(statementItems.filter(i => i.includeInProjection !== false).reduce((sum, i) => sum + Number(i.amount), 0))}
-                                </td>
+                                 <td className="px-2 py-3 text-right text-rose-800 dark:text-rose-300 bg-rose-50 dark:bg-rose-900/20 border-r border-rose-200 dark:border-rose-800 whitespace-nowrap">
+                                     {formatMoney(statementItems.filter(i => i.includeInProjection !== false && !i.id.startsWith('virtual-') && !(i as any).isVirtual).reduce((sum, i) => sum + Number(i.amount), 0))}
+                                 </td>
                                 {showPercentages && <td className="bg-rose-50 dark:bg-rose-900/20 border-r border-rose-200 dark:border-rose-800"></td>}
                                 {months.map((month, colIdx) => {
                                     const total = getMonthTotal(month);

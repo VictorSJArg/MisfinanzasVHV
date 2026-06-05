@@ -26,6 +26,7 @@ const CATEGORIES = [
     { id: 'TRANSPORTE', name: '🚗 Transporte' },
     { id: 'IMPUESTOS', name: '📋 Impuestos' },
     { id: 'CARGOS', name: '💸 Cargos' },
+    { id: 'NUEVOS_GASTOS', name: '💳 Nuevos Gastos de Tarjeta' },
     { id: 'OTROS', name: '📦 Otros' }
 ];
 
@@ -60,7 +61,6 @@ interface StatementItem {
     includeInProjection: boolean;
     projectedAmount?: number | null;
     observations?: string | null;
-
 }
 
 interface Projection {
@@ -84,11 +84,6 @@ const calculateLocalProjections = (card: CreditCard): Projection[] => {
 
     // We project 12 months ahead
     const monthsAhead = 12;
-
-    // 1. Statement Total (usually for current month/due date) - NOT NEEDED for category grid usually, but good for total
-    // However, ProjectionGrid groups by category. Statement total usually has category 'STATEMENT'
-    // which effectively hides it from specific categories unless we map it.
-    // For now we skip the generic statement total because we are interested in ITEMS.
 
     // Unified projection logic to prevent duplicates
     latestStatement.items.forEach(item => {
@@ -129,6 +124,21 @@ const calculateLocalProjections = (card: CreditCard): Projection[] => {
                     source: 'local'
                 });
             }
+        }
+        // Priority 3: Virtual items (new monthly card transactions)
+        else if (item.id.startsWith('virtual-') || (item as any).isVirtual) {
+            const amount = item.projectedAmount !== undefined && item.projectedAmount !== null ? Number(item.projectedAmount) : Number(item.amount);
+            const itemDueDate = (item as any).dueDate ? new Date((item as any).dueDate) : addMonths(new Date(latestStatement.dueDate), 1);
+            projections.push({
+                date: itemDueDate.toISOString(),
+                amount: amount,
+                description: item.description,
+                type: 'PURCHASE',
+                cardName: card.name,
+                cardId: card.id,
+                category: item.category || 'NUEVOS_GASTOS',
+                source: 'local'
+            });
         }
     });
 
@@ -911,13 +921,16 @@ export default function CreditCardsPage() {
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {filteredItems.map(item => (
+                                                {filteredItems.map(item => {
+                                                    const isVirtual = item.id.startsWith('virtual-') || (item as any).isVirtual;
+                                                    return (
                                                     <tr key={`${item.id}-${item.category}-${item.itemType}-${item.isRecurring}-${item.includeInProjection}-${item.projectedAmount}`} className="border-b border-border hover:bg-muted/50 group">
                                                         <td className="px-2 py-2">
                                                             <input
                                                                 type="text"
                                                                 key={`desc-${item.id}-${item.description}`}
                                                                 defaultValue={item.description}
+                                                                disabled={isVirtual}
                                                                 onBlur={(e) => {
                                                                     if (e.target.value !== item.description) {
                                                                         handleUpdateItem(item.id, { description: e.target.value });
@@ -937,6 +950,7 @@ export default function CreditCardsPage() {
                                                                             type="number"
                                                                             className="w-6 text-center text-xs font-semibold text-indigo-600 dark:text-indigo-400 border-0 border-b border-border focus:ring-0 focus:border-indigo-500 p-0 bg-transparent"
                                                                             defaultValue={item.installmentCurrent || 1}
+                                                                            disabled={isVirtual}
                                                                             onBlur={(e) => {
                                                                                 const val = parseInt(e.target.value);
                                                                                 if (!isNaN(val) && val !== item.installmentCurrent) {
@@ -949,6 +963,7 @@ export default function CreditCardsPage() {
                                                                             type="number"
                                                                             className="w-6 text-center text-xs font-semibold text-indigo-600 dark:text-indigo-400 border-0 border-b border-border focus:ring-0 focus:border-indigo-500 p-0 bg-transparent"
                                                                             defaultValue={item.installmentTotal}
+                                                                            disabled={isVirtual}
                                                                             onBlur={(e) => {
                                                                                 const val = parseInt(e.target.value);
                                                                                 if (!isNaN(val) && val !== item.installmentTotal) {
@@ -968,8 +983,9 @@ export default function CreditCardsPage() {
                                                         <td className="px-2 py-2">
                                                             <select
                                                                 value={item.category || 'OTROS'}
+                                                                disabled={isVirtual}
                                                                 onChange={(e) => handleUpdateItem(item.id, { category: e.target.value })}
-                                                                className="w-full text-xs border border-border rounded px-1 py-1 bg-input text-foreground cursor-pointer"
+                                                                className="w-full text-xs border border-border rounded px-1 py-1 bg-input text-foreground cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
                                                             >
                                                                 <option value="COMBUSTIBLE">⛽ Combustible</option>
                                                                 <option value="ALIMENTOS">🛒 Alimentos</option>
@@ -982,14 +998,16 @@ export default function CreditCardsPage() {
                                                                 <option value="TRANSPORTE">🚗 Transporte</option>
                                                                 <option value="IMPUESTOS">📋 Impuestos</option>
                                                                 <option value="CARGOS">💸 Cargos</option>
+                                                                <option value="NUEVOS_GASTOS">💳 Nuevos Gastos</option>
                                                                 <option value="OTROS">📦 Otros</option>
                                                             </select>
                                                         </td>
                                                         <td className="px-2 py-2">
                                                             <select
                                                                 value={item.itemType}
+                                                                disabled={isVirtual}
                                                                 onChange={(e) => handleUpdateItem(item.id, { itemType: e.target.value })}
-                                                                className="w-full text-xs border border-border rounded px-1 py-1 bg-input text-foreground cursor-pointer"
+                                                                className="w-full text-xs border border-border rounded px-1 py-1 bg-input text-foreground cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
                                                             >
                                                                 <option value="PURCHASE">🛒 Compra</option>
                                                                 <option value="RECURRING">🔄 Recurrente</option>
@@ -1003,6 +1021,7 @@ export default function CreditCardsPage() {
                                                                 type="number"
                                                                 key={`amount-${item.id}-${item.amount}`}
                                                                 defaultValue={Number(item.amount)}
+                                                                disabled={isVirtual}
                                                                 onBlur={(e) => {
                                                                     const newAmount = parseFloat(e.target.value);
                                                                     if (newAmount !== Number(item.amount)) {
@@ -1017,6 +1036,7 @@ export default function CreditCardsPage() {
                                                                 type="text"
                                                                 key={`obs-${item.id}-${item.observations}`}
                                                                 defaultValue={item.observations || ''}
+                                                                disabled={isVirtual}
                                                                 onBlur={(e) => {
                                                                     if (e.target.value !== (item.observations || '')) {
                                                                         handleUpdateItem(item.id, { observations: e.target.value });
@@ -1030,6 +1050,7 @@ export default function CreditCardsPage() {
                                                             <input
                                                                 type="number"
                                                                 value={item.projectedAmount !== null && item.projectedAmount !== undefined ? item.projectedAmount : ''}
+                                                                disabled={isVirtual}
                                                                 placeholder={Number(item.amount).toString()}
                                                                 onChange={(e) => {
                                                                     const val = e.target.value === '' ? null : parseFloat(e.target.value);
@@ -1041,9 +1062,10 @@ export default function CreditCardsPage() {
                                                         </td>
                                                         <td className="px-2 py-2 text-center">
                                                             <button
-                                                                onClick={() => handleUpdateItem(item.id, { includeInProjection: !(item.includeInProjection ?? true) })}
+                                                                onClick={() => !isVirtual && handleUpdateItem(item.id, { includeInProjection: !(item.includeInProjection ?? true) })}
+                                                                disabled={isVirtual}
                                                                 title={(item.includeInProjection ?? true) ? 'Excluir de proyección' : 'Incluir en proyección'}
-                                                                className={`text-xs px-2 py-1 rounded transition-colors cursor-pointer ${(item.includeInProjection ?? true)
+                                                                className={`text-xs px-2 py-1 rounded transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${(item.includeInProjection ?? true)
                                                                     ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
                                                                     : 'bg-muted text-muted-foreground hover:bg-accent'
                                                                     }`}
@@ -1052,25 +1074,30 @@ export default function CreditCardsPage() {
                                                             </button>
                                                         </td>
                                                         <td className="px-2 py-2 text-center">
-                                                            <div className="flex gap-1 justify-center">
-                                                                <button
-                                                                    onClick={() => handleUpdateItem(item.id, { isRecurring: !item.isRecurring })}
-                                                                    title={item.isRecurring ? 'Quitar recurrente' : 'Marcar como recurrente'}
-                                                                    className={`text-xs px-1.5 py-0.5 rounded cursor-pointer transition-colors ${item.isRecurring ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-muted text-muted-foreground hover:bg-accent'}`}
-                                                                >
-                                                                    🔄
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => handleDeleteItem(item.id)}
-                                                                    className="text-xs px-1.5 py-0.5 rounded bg-red-100 text-red-600 hover:bg-red-200 cursor-pointer"
-                                                                    title="Eliminar"
-                                                                >
-                                                                    🗑️
-                                                                </button>
-                                                            </div>
+                                                            {isVirtual ? (
+                                                                <span className="text-xs text-muted-foreground italic">Virtual</span>
+                                                            ) : (
+                                                                <div className="flex gap-1 justify-center">
+                                                                    <button
+                                                                        onClick={() => handleUpdateItem(item.id, { isRecurring: !item.isRecurring })}
+                                                                        title={item.isRecurring ? 'Quitar recurrente' : 'Marcar como recurrente'}
+                                                                        className={`text-xs px-1.5 py-0.5 rounded cursor-pointer transition-colors ${item.isRecurring ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-muted text-muted-foreground hover:bg-accent'}`}
+                                                                    >
+                                                                        🔄
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleDeleteItem(item.id)}
+                                                                        className="text-xs px-1.5 py-0.5 rounded bg-red-100 text-red-600 hover:bg-red-200 cursor-pointer"
+                                                                        title="Eliminar"
+                                                                    >
+                                                                        🗑️
+                                                                    </button>
+                                                                </div>
+                                                            )}
                                                         </td>
                                                     </tr>
-                                                ))}
+                                                    );
+                                                })}
                                             </tbody>
                                         </table>
                                     </div>

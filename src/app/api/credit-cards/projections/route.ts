@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { addMonths, endOfMonth, format, startOfMonth } from 'date-fns';
+import { getVirtualItemsForCard } from '@/lib/creditCardProjections';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,7 +9,7 @@ interface ProjectedExpense {
     date: string;
     amount: number;
     description: string;
-    type: 'STATEMENT' | 'INSTALLMENT' | 'RECURRING';
+    type: 'STATEMENT' | 'INSTALLMENT' | 'RECURRING' | 'PURCHASE';
     cardName: string;
     cardId: string;
     category?: string;
@@ -130,7 +131,19 @@ export async function GET(request: NextRequest) {
                 }
             }
 
-
+            // 4. Agregar nuevos consumos (ítems virtuales)
+            const virtualItems = await getVirtualItemsForCard(user.id, card);
+            for (const item of virtualItems) {
+                projections.push({
+                    date: format(new Date(item.dueDate), 'yyyy-MM-dd'),
+                    amount: item.amount,
+                    description: item.description,
+                    type: 'PURCHASE',
+                    cardName: card.name,
+                    cardId: card.id,
+                    category: 'NUEVOS_GASTOS'
+                });
+            }
         }
 
         // Agrupar por mes para el flujo

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getVirtualItemsForCard } from '@/lib/creditCardProjections';
 
 // GET - Listar todas las tarjetas
 export async function GET() {
@@ -22,6 +23,15 @@ export async function GET() {
             },
             orderBy: { name: 'asc' }
         });
+
+        // Inject virtual items (new monthly card transactions)
+        for (const card of cards) {
+            if (card.statements.length > 0) {
+                const latestStatement = card.statements[0];
+                const virtualItems = await getVirtualItemsForCard(user.id, card);
+                latestStatement.items = [...latestStatement.items, ...virtualItems] as any;
+            }
+        }
 
         // HACK: Fetch observations manually because Prisma Client is stale (server not restarted)
         try {
