@@ -793,7 +793,12 @@ const workflow = {
       position: [480, -1000]
     },
     {
-      parameters: { url: '={{ $json.data.mediaUrl }}', options: {} },
+      parameters: {
+        url: '={{ $json.data.mediaUrl }}',
+        responseFormat: 'file',
+        outputDataPropertyName: 'data',
+        options: {}
+      },
       id: id('e3b450cb-4280-4d1a-9f29-1b84e29cb932'),
       name: 'Get Audio',
       type: 'n8n-nodes-base.httpRequest',
@@ -840,7 +845,12 @@ const workflow = {
       position: [480, -800]
     },
     {
-      parameters: { url: '={{ $json.data.mediaUrl }}', options: {} },
+      parameters: {
+        url: '={{ $json.data.mediaUrl }}',
+        responseFormat: 'file',
+        outputDataPropertyName: 'data',
+        options: {}
+      },
       id: id('a0000000-b000-c000-d000-000000000008'),
       name: 'Get Image',
       type: 'n8n-nodes-base.httpRequest',
@@ -853,7 +863,7 @@ const workflow = {
         operation: 'analyze',
         modelId: { __rl: true, value: 'gpt-4o-mini', mode: 'list', cachedResultName: 'GPT-4O-MINI' },
         text: 'Extraé los datos financieros visibles del comprobante o imagen: comercio, fecha, monto total, moneda, rubro probable y cualquier detalle útil. Si no hay comprobante claro, describí brevemente la imagen.',
-        imageInputType: 'binary',
+        imageInputType: 'binaryFile',
         binaryPropertyName: 'data',
         options: { detail: 'auto', maxTokens: 500 }
       },

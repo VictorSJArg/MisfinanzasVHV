@@ -526,26 +526,45 @@ async function handleCreateTransactionsBulk(payload: Record<string, unknown>, co
 }
 
 async function handleUpdateTransaction(payload: Record<string, unknown>, confirmed: boolean, phone: string) {
-    const id = asString(payload.id || payload.transactionId);
-    if (!id) return json({ success: false, error: 'transaction id is required' }, 400);
+    const user = await getDefaultUser();
+    let id = asString(payload.id || payload.transactionId);
+
+    if (!id) {
+        // Fallback to the latest transaction created by this user
+        const latestTx = await prisma.transaction.findFirst({
+            where: { userId: user.id },
+            orderBy: { createdAt: 'desc' }
+        });
+        if (!latestTx) {
+            return json({ success: false, error: 'No se encontró ninguna transacción para modificar.' }, 404);
+        }
+        id = latestTx.id;
+        payload.id = id; // Ensure ID is saved in session payload
+    }
+
+    const existing = await prisma.transaction.findFirst({
+        where: { id, userId: user.id },
+        include: { category: true, account: true }
+    });
+    if (!existing) return json({ success: false, error: 'Transaction not found' }, 404);
 
     if (!confirmed) {
         await saveAssistantSession(phone, 'update_transaction', payload);
-        return requiresConfirmation('update_transaction', {
+        
+        // Build a complete preview of the final state after update
+        const preview = {
             id,
-            amount: payload.amount,
-            date: payload.date,
-            description: payload.description,
-            categoryId: payload.categoryId,
-            accountId: payload.accountId,
-            type: payload.type,
-            status: payload.status
-        });
-    }
+            amount: payload.amount !== undefined ? Number(payload.amount) : Number(existing.amount),
+            date: payload.date !== undefined ? asString(payload.date) : format(existing.date, 'yyyy-MM-dd'),
+            description: payload.description !== undefined ? asString(payload.description) : existing.description,
+            categoryName: payload.categoryName || payload.category || existing.category?.name || null,
+            accountName: payload.accountName || existing.account?.name || null,
+            type: payload.type || existing.type,
+            status: payload.status || existing.status
+        };
 
-    const user = await getDefaultUser();
-    const existing = await prisma.transaction.findFirst({ where: { id, userId: user.id } });
-    if (!existing) return json({ success: false, error: 'Transaction not found' }, 404);
+        return requiresConfirmation('update_transaction', preview);
+    }
 
     const transaction = await updateTransactionWithBalance(id, {
         amount: payload.amount as number | string | undefined,
@@ -565,24 +584,38 @@ async function handleUpdateTransaction(payload: Record<string, unknown>, confirm
 }
 
 async function handleDeleteTransaction(payload: Record<string, unknown>, confirmed: boolean, phone: string) {
-    const id = asString(payload.id || payload.transactionId);
-    if (!id) return json({ success: false, error: 'transaction id is required' }, 400);
-
     const user = await getDefaultUser();
+    let id = asString(payload.id || payload.transactionId);
+
+    if (!id) {
+        // Fallback to the latest transaction created by this user
+        const latestTx = await prisma.transaction.findFirst({
+            where: { userId: user.id },
+            orderBy: { createdAt: 'desc' }
+        });
+        if (!latestTx) {
+            return json({ success: false, error: 'No se encontró ninguna transacción para eliminar.' }, 404);
+        }
+        id = latestTx.id;
+        payload.id = id; // Ensure ID is saved in session payload
+    }
+
     const existing = await prisma.transaction.findFirst({
         where: { id, userId: user.id },
-        include: { category: true }
+        include: { category: true, account: true }
     });
     if (!existing) return json({ success: false, error: 'Transaction not found' }, 404);
 
     if (!confirmed) {
-        await saveAssistantSession(phone, 'delete_transaction', { id });
+        await saveAssistantSession(phone, 'delete_transaction', payload);
         return requiresConfirmation('delete_transaction', {
             id,
             amount: Number(existing.amount),
-            date: existing.date,
+            date: format(existing.date, 'yyyy-MM-dd'),
             description: existing.description,
-            category: existing.category?.name || null
+            category: existing.category?.name || null,
+            accountName: existing.account?.name || null,
+            type: existing.type
         });
     }
 
@@ -977,6 +1010,18 @@ async function handleConfirm(payload: Record<string, unknown>, phone: string) {
             }
 
             const resData = await response.json();
+            
+            if (!response.ok || resData.success === false) {
+                await prisma.assistantSession.delete({ where: { id: session.id } });
+                const errorReply = `Error al procesar la confirmación: ${resData.error || 'No se pudo realizar la acción.'}`;
+                await appendToAssistantHistory(phone, 'assistant', errorReply);
+                return json({
+                    success: true,
+                    processed: true,
+                    reply: errorReply
+                });
+            }
+
             await prisma.assistantSession.delete({ where: { id: session.id } });
             
             await appendToAssistantHistory(phone, 'assistant', resData.reply || 'Acción confirmada.');
