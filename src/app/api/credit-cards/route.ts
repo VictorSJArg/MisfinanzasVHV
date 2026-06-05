@@ -89,6 +89,18 @@ export async function POST(request: NextRequest) {
             }
         });
 
+        // Create a corresponding Account of type CREDIT
+        await prisma.account.create({
+            data: {
+                name: `${name} ${bank}`,
+                type: 'CREDIT',
+                balance: 0,
+                userId: user.id
+            }
+        }).catch((err) => {
+            console.error('Error creating corresponding CREDIT account:', err);
+        });
+
         return NextResponse.json(card, { status: 201 });
     } catch (error: any) {
         console.error(error);

@@ -245,8 +245,24 @@ export async function getAccountIdForCard(userId: string, card: { name: string; 
   });
 
   if (match) return match.id;
-  if (accounts.length === 1) return accounts[0].id;
-  return null;
+
+  // Create it dynamically if no matching account is found
+  try {
+    const accountName = `${card.name} ${card.bank}`;
+    const newAccount = await prisma.account.create({
+      data: {
+        name: accountName,
+        type: 'CREDIT',
+        balance: 0,
+        userId
+      }
+    });
+    console.log(`Created CREDIT account "${accountName}" dynamically for card.`);
+    return newAccount.id;
+  } catch (error) {
+    console.error('Error creating CREDIT account dynamically:', error);
+    return null;
+  }
 }
 
 export async function getVirtualItemsForCard(userId: string, card: { id: string; name: string; bank: string; statements: any[] }): Promise<any[]> {

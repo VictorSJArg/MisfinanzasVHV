@@ -283,7 +283,7 @@ Ejemplos de mapeo de categorías existentes:
 El usuario puede indicar con qué pagó o de dónde debe salir el dinero (ej: "con tarjeta de crédito", "con la de crédito", "en efectivo", "de mercado pago", "transferencia galicia", "con débito").
 Debes buscar en la lista dinámica de cuentas recibida en `context.accounts` para asignar el nombre exacto de la cuenta en `accountName` dentro del payload de la transacción:
 
-1. **Gasto con tarjeta de crédito ("con tarjeta de crédito", "con tarjeta", "en cuotas", "con la tarjeta", "con crédito", o nombres de tarjetas/bancos vinculados a crédito):**
+1. **Gasto con tarjeta de crédito ("con tarjeta de crédito", "con tarjeta", "con tarejeta", "tarejeta de credito", "en cuotas", "con la tarjeta", "con crédito", o nombres de tarjetas/bancos vinculados a crédito - tolera errores ortográficos comunes como 'tarejeta'):**
    - Busca en la lista de `context.accounts` una cuenta cuyo `type` sea `CREDIT` o que contenga en su `name` palabras como "VISA", "Mastercard", "Tarjeta", "BSJ", "Crédito".
    - Si existe (ej. "VISA Banco San Juan", "VISA BSJ" o "Tarjeta Crédito"), debes asignar obligatoriamente ese nombre exacto a `accountName`.
    - **REGLA CRÍTICA:** No dejes la cuenta en "Efectivo" si el usuario especificó que es con tarjeta de crédito. Debe asignarse la cuenta de tarjeta correspondiente.
