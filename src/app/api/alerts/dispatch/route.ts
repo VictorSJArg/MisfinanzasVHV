@@ -7,11 +7,11 @@ function isAuthorized(request: NextRequest) {
   const manualTest = request.nextUrl.searchParams.get('manualTest') === 'true';
   if (!cronSecret) {
     const userAgent = request.headers.get('user-agent') || '';
-    return dryRun || manualTest || userAgent === 'vercel-cron/1.0';
+    return userAgent === 'vercel-cron/1.0' || (process.env.NODE_ENV !== 'production' && (dryRun || manualTest));
   }
 
   const authHeader = request.headers.get('authorization');
-  return dryRun || manualTest || authHeader === `Bearer ${cronSecret}`;
+  return authHeader === `Bearer ${cronSecret}`;
 }
 
 async function handleDispatch(request: NextRequest, dryRunFallback = false) {

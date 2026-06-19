@@ -6,6 +6,9 @@ function isExcludedPath(pathname: string) {
     pathname.startsWith('/api/assistant') ||
     pathname.startsWith('/api/webhook') ||
     pathname.startsWith('/api/keep-alive') ||
+    pathname === '/api/alerts/dispatch' ||
+    pathname === '/api/personal-assistant/dispatch' ||
+    pathname === '/api/personal-assistant/scheduled-alert' ||
     pathname === '/favicon.ico' ||
     /\.[a-zA-Z0-9]+$/.test(pathname)
   );

@@ -41,12 +41,15 @@ async function selectSourceUser(client) {
 }
 
 async function assertTargetIsSafe(client) {
-  const checks = await Promise.all([
-    client.query('SELECT COUNT(*)::int AS count FROM "Transaction"'),
-    client.query('SELECT COUNT(*)::int AS count FROM "Budget"'),
-    client.query('SELECT COUNT(*)::int AS count FROM "CreditCard"'),
-    client.query('SELECT COUNT(*)::int AS count FROM "Account" WHERE balance <> 0')
-  ]);
+  const checks = [];
+  for (const query of [
+    'SELECT COUNT(*)::int AS count FROM "Transaction"',
+    'SELECT COUNT(*)::int AS count FROM "Budget"',
+    'SELECT COUNT(*)::int AS count FROM "CreditCard"',
+    'SELECT COUNT(*)::int AS count FROM "Account" WHERE balance <> 0'
+  ]) {
+    checks.push(await client.query(query));
+  }
   const labels = ['movimientos', 'presupuestos', 'tarjetas', 'cuentas con saldo'];
   const populated = checks
     .map((result, index) => ({ label: labels[index], count: result.rows[0].count }))
