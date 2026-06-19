@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { randomUUID } from 'node:crypto';
 
 const { Client } = pg;
 const apply = process.argv.includes('--apply');
@@ -95,11 +96,11 @@ async function main() {
     await assertTargetIsSafe(target);
 
     const userResult = await target.query(
-      `INSERT INTO "User" (email, name, currency)
-       VALUES ($1, $2, 'ARS')
+      `INSERT INTO "User" (id, email, name, currency)
+       VALUES ($1, $2, $3, 'ARS')
        ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
        RETURNING id`,
-      [targetEmail, targetName]
+      [randomUUID(), targetEmail, targetName]
     );
     const targetUserId = userResult.rows[0].id;
 
@@ -110,8 +111,8 @@ async function main() {
       );
       if (!existing.rowCount) {
         await target.query(
-          'INSERT INTO "Account" (name, type, balance, "userId") VALUES ($1, $2, 0, $3)',
-          [account.name, account.type, targetUserId]
+          'INSERT INTO "Account" (id, name, type, balance, "userId") VALUES ($1, $2, $3, 0, $4)',
+          [randomUUID(), account.name, account.type, targetUserId]
         );
       }
     }
@@ -131,12 +132,12 @@ async function main() {
         console.warn(`Aviso: ${category.name} se copiará como categoría raíz porque se referenciaba a sí misma.`);
       }
       const inserted = await target.query(
-        `INSERT INTO "Category" (name, type, icon, color, "parentId", "sortOrder", "userId")
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO "Category" (id, name, type, icon, color, "parentId", "sortOrder", "userId")
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT ("userId", name, type) DO UPDATE
          SET icon = EXCLUDED.icon, color = EXCLUDED.color, "parentId" = EXCLUDED."parentId", "sortOrder" = EXCLUDED."sortOrder"
          RETURNING id`,
-        [category.name, category.type, category.icon, category.color, parentId, category.sortOrder, targetUserId]
+        [randomUUID(), category.name, category.type, category.icon, category.color, parentId, category.sortOrder, targetUserId]
       );
       idMap.set(category.id, inserted.rows[0].id);
     }
