@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -13,13 +13,13 @@ const openAiCredential = {
 };
 
 const configDefaults = {
-  APP_BASE_URL: 'COMPLETAR_URL_PUBLICA_DE_LA_APP',
-  ASSISTANT_WEBHOOK_SECRET: 'COMPLETAR_TOKEN_COMPARTIDO_CON_LA_APP',
-  ASSISTANT_ALLOWED_PHONE: 'COMPLETAR_NUMERO_WHATSAPP_SOLO_DIGITOS',
-  DEFAULT_ACCOUNT_NAME: 'Efectivo',
-  EVOLUTION_BASE_URL: '',
-  EVOLUTION_INSTANCE: '',
-  EVOLUTION_API_KEY: ''
+  APP_BASE_URL: "={{ $vars.APP_BASE_URL || $env.APP_BASE_URL || 'https://misfinanzasvhv.vercel.app' }}",
+  ASSISTANT_WEBHOOK_SECRET: "={{ $vars.ASSISTANT_WEBHOOK_SECRET || $env.ASSISTANT_WEBHOOK_SECRET || '' }}",
+  ASSISTANT_ALLOWED_PHONE: "={{ $vars.ASSISTANT_ALLOWED_PHONE || $env.ASSISTANT_ALLOWED_PHONE || 'COMPLETAR_NUMERO_WHATSAPP_SOLO_DIGITOS' }}",
+  DEFAULT_ACCOUNT_NAME: "={{ $vars.DEFAULT_ACCOUNT_NAME || $env.DEFAULT_ACCOUNT_NAME || 'Efectivo' }}",
+  EVOLUTION_BASE_URL: "={{ $vars.EVOLUTION_BASE_URL || $env.EVOLUTION_BASE_URL || '' }}",
+  EVOLUTION_INSTANCE: "={{ $vars.EVOLUTION_INSTANCE || $env.EVOLUTION_INSTANCE || '' }}",
+  EVOLUTION_API_KEY: "={{ $vars.EVOLUTION_API_KEY || $env.EVOLUTION_API_KEY || '' }}"
 };
 
 function id(seed) {
@@ -155,7 +155,41 @@ return [{
 
 
 const confirmationRouterCode = `function normalize(value) {
-  return String(value || '').trim().toLowerCase();
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\\u0300-\\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeHttpError(error) {
+  const status = error.httpCode ||
+    error.statusCode ||
+    error.status ||
+    error.response?.status ||
+    error.response?.statusCode ||
+    error.cause?.response?.status ||
+    500;
+
+  let data = error.error ||
+    error.response?.data ||
+    error.response?.body ||
+    error.cause?.response?.data ||
+    error.cause?.response?.body ||
+    error.description ||
+    error.message ||
+    {};
+
+  if (typeof data === 'string') {
+    try {
+      data = JSON.parse(data);
+    } catch {
+      data = { raw: data };
+    }
+  }
+
+  const finalStatus = data?.requiresConfirmation === true && status === 500 ? 409 : status;
+  return { status: finalStatus, data };
 }
 
 const requestJson = async ({ method = 'GET', url, headers = {}, body }) => {
@@ -169,22 +203,8 @@ const requestJson = async ({ method = 'GET', url, headers = {}, body }) => {
     });
     return { ok: true, status: 200, data: response };
   } catch (error) {
-    const status = error.httpCode || (error.response && error.response.status) || 500;
-    let responseData = error.error;
-    if (!responseData && error.response) {
-      responseData = error.response.data || error.response.body;
-    }
-    if (!responseData) {
-      responseData = { message: error.message };
-    }
-    if (typeof responseData === 'string') {
-      try {
-        responseData = JSON.parse(responseData);
-      } catch (e) {
-        responseData = { raw: responseData };
-      }
-    }
-    return { ok: false, status, data: responseData };
+    const normalized = normalizeHttpError(error);
+    return { ok: false, status: normalized.status, data: normalized.data };
   }
 };
 
@@ -207,6 +227,122 @@ if (!item.authorized) {
 }
 
 const config = $('Config').first().json;
+staticData.pendingConfirmations ||= {};
+const normalizedText = normalize(item.data.text);
+const pending = staticData.pendingConfirmations[item.data.phone];
+const yes = ['si', 'confirmo', 'confirmar', 'ok', 'dale', 'guardar', 'cargar'];
+const no = ['no', 'cancelar', 'cancela', 'anular', 'descartar'];
+
+for (const [phone, itemPending] of Object.entries(staticData.pendingConfirmations)) {
+  if (!itemPending?.expiresAt || Date.now() > itemPending.expiresAt) {
+    delete staticData.pendingConfirmations[phone];
+  }
+}
+
+if (pending && yes.includes(normalizedText)) {
+  delete staticData.pendingConfirmations[item.data.phone];
+  const assistantRequest = pending.assistantRequest || {};
+  const confirmedResponse = await requestJson({
+    method: 'POST',
+    url: \`\${String(config.APP_BASE_URL || '').replace(/\\/$/, '')}/api/assistant\`,
+    headers: { Authorization: \`Bearer \${config.ASSISTANT_WEBHOOK_SECRET}\` },
+    body: {
+      sourcePhone: item.data.phone,
+      action: assistantRequest.action,
+      payload: assistantRequest.payload || {},
+      confirmed: true
+    }
+  });
+  return [{
+    json: {
+      ...item,
+      shouldContinue: false,
+      shouldSend: true,
+      replyText: confirmedResponse.ok && confirmedResponse.data?.success === true
+        ? (confirmedResponse.data?.reply || 'Listo. Accion confirmada.')
+        : \`No pude ejecutar la accion real en la app: \${confirmedResponse.data?.error || confirmedResponse.data?.reply || confirmedResponse.status || 'respuesta sin success:true'}\`,
+      appResponse: confirmedResponse.data
+    }
+  }];
+}
+
+if (pending && no.includes(normalizedText)) {
+  delete staticData.pendingConfirmations[item.data.phone];
+  return [{
+    json: {
+      ...item,
+      shouldContinue: false,
+      shouldSend: true,
+      replyText: 'Cancelado. No hice cambios.'
+    }
+  }];
+}
+
+function directPersonalUpdateFromText(text) {
+  const normalized = normalize(text);
+  const status = /\\b(cancela|cancelar|cancelalo|cancelame|anula|anular)\\b/.test(normalized)
+    ? 'CANCELLED'
+    : /\\b(marca|marcar|marcalo|marcame|realizado|realizada|listo|hecho|cumplido)\\b/.test(normalized)
+      ? 'DONE'
+      : '';
+  if (!status) return null;
+
+  const terms = [
+    ['turno', /\\bturnos?\\b/],
+    ['cita', /\\bcitas?\\b/],
+    ['reunion', /\\breuniones?\\b|\\breunion\\b/],
+    ['agenda', /\\bagenda\\b|\\beventos?\\b/],
+    ['recordatorio', /\\brecordatorios?\\b/],
+    ['tarea', /\\btareas?\\b/]
+  ];
+  const matched = terms.find(([, pattern]) => pattern.test(normalized));
+  if (!matched) return null;
+
+  const term = matched[0];
+  let query = normalized
+    .replace(/\\b(marca|marcar|marcalo|marcame|como|realizado|realizada|listo|hecho|cumplido|cancela|cancelar|cancelalo|cancelame|anula|anular|un|una|el|la|lo|los|las|al|del|de|por|favor)\\b/g, ' ')
+    .replace(/\\s+/g, ' ')
+    .trim();
+  if (!query || query.length < 3) query = term;
+  if (!query.includes(term)) query = (term + ' ' + query).trim();
+
+  return {
+    action: 'update_personal_item',
+    payload: {
+      status,
+      query,
+      searchAllPersonalTypes: true
+    }
+  };
+}
+
+const directPersonalUpdate = directPersonalUpdateFromText(item.data.text);
+if (directPersonalUpdate) {
+  const directResponse = await requestJson({
+    method: 'POST',
+    url: \`\${String(config.APP_BASE_URL || '').replace(/\\/$/, '')}/api/assistant\`,
+    headers: { Authorization: \`Bearer \${config.ASSISTANT_WEBHOOK_SECRET}\` },
+    body: {
+      sourcePhone: item.data.phone,
+      action: directPersonalUpdate.action,
+      payload: directPersonalUpdate.payload,
+      confirmed: false
+    }
+  });
+  return [{
+    json: {
+      ...item,
+      shouldContinue: false,
+      shouldSend: true,
+      directPersonalUpdate: true,
+      replyText: directResponse.ok && directResponse.data?.reply
+        ? directResponse.data.reply
+        : \`No pude ejecutar la accion real en la app: \${directResponse.data?.error || directResponse.data?.reply || directResponse.status || 'respuesta sin success:true'}\`,
+      appResponse: directResponse.data
+    }
+  }];
+}
+
 const appResponse = await requestJson({
   method: 'POST',
   url: \`\${String(config.APP_BASE_URL || '').replace(/\\/$/, '')}/api/assistant\`,
@@ -232,7 +368,7 @@ if (appResponse.ok && appResponse.data?.processed === true) {
   }];
 }
 
-return [{ json: { ...item, shouldContinue: true, shouldSend: false } }];`;
+return [{ json: { ...item, shouldContinue: true, shouldSend: false, pendingConfirmation: pending || null } }];`;
 
 const prepareTextInputCode = `return [{
   json: {
@@ -268,7 +404,37 @@ const replyText = type === 'videoMessage'
   : 'Por ahora solo proceso texto, audio e imágenes. Mandame el gasto o ingreso en alguno de esos formatos.';
 return [{ json: { ...$json, shouldContinue: false, shouldSend: true, replyText } }];`;
 
-const prepareAgentPromptCode = `const requestJson = async ({ method = 'GET', url, headers = {}, body }) => {
+const prepareAgentPromptCode = `function normalizeHttpError(error) {
+  const status = error.httpCode ||
+    error.statusCode ||
+    error.status ||
+    error.response?.status ||
+    error.response?.statusCode ||
+    error.cause?.response?.status ||
+    500;
+
+  let data = error.error ||
+    error.response?.data ||
+    error.response?.body ||
+    error.cause?.response?.data ||
+    error.cause?.response?.body ||
+    error.description ||
+    error.message ||
+    {};
+
+  if (typeof data === 'string') {
+    try {
+      data = JSON.parse(data);
+    } catch {
+      data = { raw: data };
+    }
+  }
+
+  const finalStatus = data?.requiresConfirmation === true && status === 500 ? 409 : status;
+  return { status: finalStatus, data };
+}
+
+const requestJson = async ({ method = 'GET', url, headers = {}, body }) => {
   try {
     const response = await this.helpers.httpRequest({
       method,
@@ -279,27 +445,158 @@ const prepareAgentPromptCode = `const requestJson = async ({ method = 'GET', url
     });
     return { ok: true, status: 200, data: response };
   } catch (error) {
-    const status = error.httpCode || (error.response && error.response.status) || 500;
-    let responseData = error.error;
-    if (!responseData && error.response) {
-      responseData = error.response.data || error.response.body;
-    }
-    if (!responseData) {
-      responseData = { message: error.message };
-    }
-    if (typeof responseData === 'string') {
-      try {
-        responseData = JSON.parse(responseData);
-      } catch (e) {
-        responseData = { raw: responseData };
-      }
-    }
-    return { ok: false, status, data: responseData };
+    const normalized = normalizeHttpError(error);
+    return { ok: false, status: normalized.status, data: normalized.data };
   }
 };
 
 function todayArgentina() {
   return new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Argentina/Buenos_Aires' });
+}
+
+function normalizeRouteText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\\u0300-\\u036f]/g, '')
+    .toLowerCase();
+}
+
+function routeDomain(message, chatHistory = []) {
+  const text = normalizeRouteText(message);
+  const recent = normalizeRouteText(
+    chatHistory
+      .slice(-4)
+      .map((entry) => entry?.content || '')
+      .join(' ')
+  );
+  const assistantSignals = [
+    /\\brecordatorio\\b/,
+    /\\brecordarme\\b/,
+    /\\bacordame\\b/,
+    /\\bagenda\\b/,
+    /\\btarea\\b/,
+    /\\breunion\\b/,
+    /\\bcita\\b/,
+    /\\bturno\\b/,
+    /\\bevento\\b/,
+    /\\bcontacto\\b/,
+    /\\bwhats?app\\b/,
+    /\\bwasap\\b/,
+    /\\bmandale\\b/,
+    /\\benviale\\b/,
+    /\\bavisale\\b/,
+    /\\bmensaje\\b/,
+    /\\bllamar\\b/,
+    /\\brealizado\\b/,
+    /\\bmarcar\\s+listo\\b/
+  ];
+  const financeSignals = [
+    /\\bgasto\\b/,
+    /\\bingreso\\b/,
+    /\\bcompra\\b/,
+    /\\bpago\\b/,
+    /\\bpague\\b/,
+    /\\bcobro\\b/,
+    /\\bbalance\\b/,
+    /\\bresumen financiero\\b/,
+    /\\bmovimiento\\b/,
+    /\\btransaccion\\b/,
+    /\\btarjeta\\b/,
+    /\\bcuota\\b/,
+    /\\bpresupuesto\\b/
+  ];
+  const hasAssistant = assistantSignals.some((pattern) => pattern.test(text));
+  const hasFinance = financeSignals.some((pattern) => pattern.test(text));
+  const hasMoney = /\\$|\\b\\d{3,}\\b|\\bpor\\s+\\d+/i.test(text);
+  const asksToday = /que tengo|que hay|pendientes|para hoy|hoy/i.test(text);
+
+  if (hasAssistant && !/\\bgasto\\b|\\bingreso\\b|\\btransaccion\\b|\\bmovimiento\\b/.test(text)) {
+    return {
+      domain: 'assistant',
+      confidence: 0.96,
+      reason: 'El mensaje actual contiene senales fuertes de asistente personal.',
+      allowedActions: [
+        'personal_overview',
+        'search_personal_items',
+        'create_personal_contact',
+        'create_personal_reminder',
+        'create_personal_task',
+        'create_personal_event',
+        'create_outbound_message',
+        'send_outbound_message',
+        'update_personal_task',
+        'update_personal_reminder',
+        'update_personal_event',
+        'update_personal_item',
+        'postpone_personal_reminder',
+        'clarification',
+        'unsupported'
+      ]
+    };
+  }
+
+  if (asksToday && !hasFinance) {
+    return {
+      domain: 'assistant',
+      confidence: 0.82,
+      reason: 'Consulta diaria ambigua: se responde desde asistente porque combina agenda y finanzas.',
+      allowedActions: ['personal_overview', 'search_personal_items', 'update_personal_task', 'update_personal_reminder', 'update_personal_event', 'update_personal_item', 'clarification', 'unsupported']
+    };
+  }
+
+  if (hasFinance || hasMoney) {
+    return {
+      domain: 'finance',
+      confidence: hasFinance ? 0.92 : 0.72,
+      reason: 'El mensaje actual contiene senales financieras o monto.',
+      allowedActions: [
+        'summary',
+        'search_transactions',
+        'create_transaction',
+        'create_transactions_bulk',
+        'update_transaction',
+        'delete_transaction',
+        'delete_transactions_bulk',
+        'dashboard_analysis',
+        'credit_cards',
+        'clarification',
+        'unsupported'
+      ]
+    };
+  }
+
+  if (/recordatorio|tarea|agenda|whats?app|contacto|evento|reunion|mensaje/.test(recent)) {
+    return {
+      domain: 'assistant',
+      confidence: 0.65,
+      reason: 'Sin senal fuerte nueva; el historial reciente venia del asistente.',
+      allowedActions: ['personal_overview', 'search_personal_items', 'clarification', 'unsupported']
+    };
+  }
+
+  return {
+    domain: 'finance',
+    confidence: 0.55,
+    reason: 'Sin senal fuerte; se mantiene finanzas como dominio por defecto.',
+    allowedActions: [
+      'summary',
+      'search_transactions',
+      'dashboard_analysis',
+      'credit_cards',
+      'clarification',
+      'unsupported'
+    ]
+  };
+}
+
+function isLikelyPendingCorrection(message) {
+  const text = normalizeRouteText(message);
+  if (!text) return false;
+  if (/^(si|no|ok|dale|confirmo|cancelar|cancela)$/.test(text)) return true;
+  if (/^(opcion\\s*)?\\d+$/.test(text) || /^la\\s+(primera|segunda|tercera|cuarta|quinta)$/.test(text)) return true;
+  if (/\\b(mejor|cambialo|cambia|corregi|corregir|en realidad|que sea|ponelo|modifica|modificalo|descripcion|detalle|fecha|hora|monto|importe)\\b/.test(text)) return true;
+  const commandSignals = /\\b(marca|marcar|cancela|cancelar|crea|crear|carga|cargar|busca|buscar|cuanto|cuánto|resumen|listame|mostrame|que tengo|agenda|recordatorio|tarea|turno|gasto|ingreso)\\b/;
+  return text.split(/\\s+/).length <= 4 && !commandSignals.test(text);
 }
 
 const config = $('Config').first().json;
@@ -329,22 +626,35 @@ if (!metadata.ok) {
   }];
 }
 
+const chatHistory = metadata.data?.data?.chatHistory || [];
+const routing = routeDomain(item.normalizedInput, chatHistory);
+let pendingConfirmation = item.pendingConfirmation || null;
+if (pendingConfirmation && !isLikelyPendingCorrection(item.normalizedInput)) {
+  const staticData = $getWorkflowStaticData('global');
+  if (staticData.pendingConfirmations) delete staticData.pendingConfirmations[item.data.phone];
+  pendingConfirmation = null;
+}
 const agentInput = {
   message: item.normalizedInput,
   source: item.source,
+  routing,
   context: {
     today: todayArgentina(),
     phone: item.data.phone,
     defaultAccountName: config.DEFAULT_ACCOUNT_NAME || 'Efectivo',
     categories: metadata.data?.data?.categories || [],
     accounts: metadata.data?.data?.accounts || [],
-    chatHistory: metadata.data?.data?.chatHistory || []
+    personalContacts: metadata.data?.data?.personalContacts || [],
+    chatHistory,
+    pendingAssistantSession: metadata.data?.data?.pendingAssistantSession || null,
+    pendingConfirmation
   }
 };
 
 return [{
   json: {
     ...item,
+    routing,
     shouldUseOpenAI: true,
     agentPrompt: JSON.stringify(agentInput)
   }
@@ -357,6 +667,69 @@ const executeAssistantCode = `function money(value) {
 
 function confirmationText(action, payload, appPreview) {
   const preview = appPreview || payload || {};
+  if (action === 'create_personal_reminder') {
+    return [
+      'Confirmo recordatorio?',
+      preview.title ? \`Titulo: \${preview.title}\` : '',
+      preview.date ? \`Fecha: \${preview.date}\` : '',
+      preview.text ? \`Detalle: \${preview.text}\` : '',
+      '',
+      'Responde SI para confirmar o NO para cancelar.'
+    ].filter(Boolean).join('\\n');
+  }
+  if (action === 'create_personal_task') {
+    return [
+      'Confirmo tarea?',
+      preview.title ? \`Titulo: \${preview.title}\` : '',
+      preview.date ? \`Vence: \${preview.date}\` : '',
+      '',
+      'Responde SI para confirmar o NO para cancelar.'
+    ].filter(Boolean).join('\\n');
+  }
+  if (action === 'create_personal_event') {
+    return [
+      'Confirmo evento en agenda?',
+      preview.title ? \`Titulo: \${preview.title}\` : '',
+      preview.date ? \`Fecha: \${preview.date}\` : '',
+      preview.contact ? \`Con: \${preview.contact}\` : '',
+      '',
+      'Responde SI para confirmar o NO para cancelar.'
+    ].filter(Boolean).join('\\n');
+  }
+  if (action === 'create_personal_contact') {
+    return [
+      'Confirmo contacto?',
+      preview.contact ? \`Nombre: \${preview.contact}\` : '',
+      preview.phone ? \`Telefono: \${preview.phone}\` : '',
+      '',
+      'Responde SI para confirmar o NO para cancelar.'
+    ].filter(Boolean).join('\\n');
+  }
+  if (action === 'create_outbound_message' || action === 'send_outbound_message') {
+    return [
+      action === 'send_outbound_message' ? 'Confirmo envio de WhatsApp?' : 'Confirmo preparar WhatsApp?',
+      preview.contact ? \`Para: \${preview.contact}\` : '',
+      preview.phone ? \`Telefono: \${preview.phone}\` : '',
+      preview.text ? \`Mensaje: \${preview.text}\` : '',
+      '',
+      'Responde SI para confirmar o NO para cancelar.'
+    ].filter(Boolean).join('\\n');
+  }
+  if (action === 'update_personal_task' || action === 'update_personal_reminder' || action === 'update_personal_event' || action === 'update_personal_item' || action === 'postpone_personal_reminder') {
+    return [
+      'Confirmo actualizar el asistente?',
+      preview.previous ? \`Actual: \${preview.previous.title || ''} \${preview.previous.date || ''}\`.trim() : '',
+      preview.title ? \`Item: \${preview.title}\` : '',
+      preview.description ? \`Descripcion: \${preview.description}\` : '',
+      preview.date ? \`Fecha: \${preview.date}\` : '',
+      preview.status ? \`Estado: \${preview.status}\` : '',
+      preview.priority ? \`Prioridad: \${preview.priority}\` : '',
+      preview.location ? \`Lugar: \${preview.location}\` : '',
+      preview.participants ? \`Con: \${preview.participants}\` : '',
+      '',
+      'Responde SI para confirmar o NO para cancelar.'
+    ].filter(Boolean).join('\\n');
+  }
   if (action === 'delete_transaction') {
     return [
       '¿Confirmo la ELIMINACIÓN del siguiente movimiento?',
@@ -404,13 +777,45 @@ function confirmationText(action, payload, appPreview) {
   const type = preview.type === 'INCOME' ? 'ingreso' : 'gasto';
   return [
     \`Confirmo \${type}\${preview.amount ? \` de \${money(preview.amount)}\` : ''}?\`,
+    preview.previous ? \`Actual: \${preview.previous.date || ''} \${preview.previous.description || ''} \${preview.previous.amount ? money(preview.previous.amount) : ''}\`.trim() : '',
     preview.date ? \`Fecha: \${preview.date}\` : '',
     preview.categoryName || preview.category ? \`Categoría: \${preview.categoryName || preview.category}\` : '',
     preview.accountName ? \`Cuenta: \${preview.accountName}\` : '',
     preview.description ? \`Detalle: \${preview.description}\` : '',
+    preview.status ? \`Estado: \${preview.status}\` : '',
     '',
     'Respondé SI para confirmar o NO para cancelar.'
   ].filter(Boolean).join('\\n');
+}
+
+function normalizeHttpError(error) {
+  const status = error.httpCode ||
+    error.statusCode ||
+    error.status ||
+    error.response?.status ||
+    error.response?.statusCode ||
+    error.cause?.response?.status ||
+    500;
+
+  let data = error.error ||
+    error.response?.data ||
+    error.response?.body ||
+    error.cause?.response?.data ||
+    error.cause?.response?.body ||
+    error.description ||
+    error.message ||
+    {};
+
+  if (typeof data === 'string') {
+    try {
+      data = JSON.parse(data);
+    } catch {
+      data = { raw: data };
+    }
+  }
+
+  const finalStatus = data?.requiresConfirmation === true && status === 500 ? 409 : status;
+  return { status: finalStatus, data };
 }
 
 const requestJson = async ({ method = 'GET', url, headers = {}, body }) => {
@@ -424,27 +829,15 @@ const requestJson = async ({ method = 'GET', url, headers = {}, body }) => {
     });
     return { ok: true, status: 200, data: response };
   } catch (error) {
-    const status = error.httpCode || (error.response && error.response.status) || 500;
-    let responseData = error.error;
-    if (!responseData && error.response) {
-      responseData = error.response.data || error.response.body;
-    }
-    if (!responseData) {
-      responseData = { message: error.message };
-    }
-    if (typeof responseData === 'string') {
-      try {
-        responseData = JSON.parse(responseData);
-      } catch (e) {
-        responseData = { raw: responseData };
-      }
-    }
-    return { ok: false, status, data: responseData };
+    const normalized = normalizeHttpError(error);
+    return { ok: false, status: normalized.status, data: normalized.data };
   }
 };
 
 const base = $('Preparar Prompt Finanzas').item.json;
 const config = $('Config').first().json;
+const staticData = $getWorkflowStaticData('global');
+staticData.pendingConfirmations ||= {};
 let agentOutput = $json.message?.content || $json.content || $json;
 if (typeof agentOutput === 'string') {
   try { agentOutput = JSON.parse(agentOutput); } catch {
@@ -489,6 +882,124 @@ if (!assistantRequest.action) {
   return [{ json: { ...base, shouldSend: true, replyText, agentOutput } }];
 }
 
+const financeActions = new Set([
+  'summary',
+  'search_transactions',
+  'create_transaction',
+  'create_transactions_bulk',
+  'update_transaction',
+  'delete_transaction',
+  'delete_transactions_bulk',
+  'dashboard_analysis',
+  'credit_cards'
+]);
+const assistantActions = new Set([
+  'personal_overview',
+  'search_personal_items',
+  'create_personal_contact',
+  'create_personal_reminder',
+  'create_personal_task',
+  'create_personal_event',
+  'create_outbound_message',
+  'send_outbound_message',
+  'update_personal_task',
+  'update_personal_reminder',
+  'update_personal_event',
+  'update_personal_item',
+  'postpone_personal_reminder'
+]);
+const routedDomain = base.routing?.domain;
+const requestedAction = assistantRequest.action;
+if (routedDomain === 'assistant' && financeActions.has(requestedAction)) {
+  const replyText = 'Te lo tomo como pedido del asistente personal, no como gasto. Decime fecha/hora si queres crear el recordatorio, o indicame "gasto" si en realidad querias cargar un movimiento financiero.';
+  await requestJson({
+    method: 'POST',
+    url: \`\${String(config.APP_BASE_URL || '').replace(/\\/$/, '')}/api/assistant\`,
+    headers: { Authorization: \`Bearer \${config.ASSISTANT_WEBHOOK_SECRET}\` },
+    body: {
+      sourcePhone: base.data.phone,
+      action: 'log_reply',
+      payload: {
+        role: 'assistant',
+        text: replyText
+      }
+    }
+  });
+  return [{ json: { ...base, shouldSend: true, replyText, agentOutput, blockedByDomainRouter: true } }];
+}
+if (routedDomain === 'finance' && assistantActions.has(requestedAction)) {
+  const replyText = 'Te lo tomo como pedido financiero. Si queres una accion del asistente, menciona recordatorio, tarea, agenda, contacto o WhatsApp.';
+  await requestJson({
+    method: 'POST',
+    url: \`\${String(config.APP_BASE_URL || '').replace(/\\/$/, '')}/api/assistant\`,
+    headers: { Authorization: \`Bearer \${config.ASSISTANT_WEBHOOK_SECRET}\` },
+    body: {
+      sourcePhone: base.data.phone,
+      action: 'log_reply',
+      payload: {
+        role: 'assistant',
+        text: replyText
+      }
+    }
+  });
+  return [{ json: { ...base, shouldSend: true, replyText, agentOutput, blockedByDomainRouter: true } }];
+}
+
+function normalizeLooseText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\\u0300-\\u036f]/g, '');
+}
+
+function hasPersonalTargetPayload(payload) {
+  return Boolean(
+    payload?.id ||
+    payload?.taskId ||
+    payload?.reminderId ||
+    payload?.eventId ||
+    payload?.query ||
+    payload?.target ||
+    payload?.targetTitle ||
+    payload?.currentTitle ||
+    payload?.originalTitle ||
+    payload?.title ||
+    payload?.task ||
+    payload?.reminder ||
+    payload?.event
+  );
+}
+
+function inferPersonalQueryFromText(text) {
+  const normalized = normalizeLooseText(text);
+  const patterns = [
+    ['turno', /\\bturnos?\\b/],
+    ['cita', /\\bcitas?\\b/],
+    ['reunion', /\\breuniones?\\b|\\breunion\\b/],
+    ['agenda', /\\bagenda\\b|\\beventos?\\b/],
+    ['recordatorio', /\\brecordatorios?\\b/],
+    ['tarea', /\\btareas?\\b/]
+  ];
+  const match = patterns.find(([, pattern]) => pattern.test(normalized));
+  return match ? match[0] : '';
+}
+
+const personalUpdateActions = new Set([
+  'update_personal_task',
+  'update_personal_reminder',
+  'update_personal_event',
+  'update_personal_item'
+]);
+if (personalUpdateActions.has(assistantRequest.action) && !hasPersonalTargetPayload(assistantRequest.payload || {})) {
+  const inferredQuery = inferPersonalQueryFromText(base.normalizedInput || base.data?.text || '');
+  assistantRequest.action = 'update_personal_item';
+  assistantRequest.payload = {
+    ...(assistantRequest.payload || {}),
+    query: inferredQuery || base.normalizedInput || base.data?.text || '',
+    searchAllPersonalTypes: true
+  };
+}
+
 const appResponse = await requestJson({
   method: 'POST',
   url: \`\${String(config.APP_BASE_URL || '').replace(/\\/$/, '')}/api/assistant\`,
@@ -504,9 +1015,25 @@ const appResponse = await requestJson({
 const requiresConfirmation = appResponse.status === 409 || appResponse.data?.requiresConfirmation === true;
 let replyText;
 if (requiresConfirmation) {
+  staticData.pendingConfirmations[base.data.phone] = {
+    assistantRequest,
+    preview: appResponse.data?.preview || assistantRequest.payload || {},
+    action: appResponse.data?.action || assistantRequest.action,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + 15 * 60 * 1000
+  };
   replyText = confirmationText(assistantRequest.action, assistantRequest.payload, appResponse.data?.preview);
 } else {
-  replyText = appResponse.data?.reply || agentOutput.reply || (appResponse.ok ? 'Listo.' : \`No pude ejecutar: \${appResponse.data?.error || appResponse.status}\`);
+  const appSuccess = appResponse.ok && appResponse.data?.success === true;
+  const sentMessage = appResponse.data?.data?.message;
+  const sendStatusOk = assistantRequest.action !== 'send_outbound_message' || sentMessage?.status === 'SENT';
+  if (appSuccess && appResponse.data?.processed === true && appResponse.data?.reply) {
+    replyText = appResponse.data.reply;
+  } else if (!appSuccess || !sendStatusOk) {
+    replyText = \`No pude ejecutar la accion real en la app: \${appResponse.data?.error || appResponse.data?.reply || appResponse.status || 'respuesta sin success:true'}\`;
+  } else {
+    replyText = appResponse.data?.reply || 'Listo.';
+  }
 }
 
 // Log assistant reply
@@ -586,12 +1113,16 @@ return chunks.map((splitText, index) => ({
   json: { ...input, splitText, splitIndex: index + 1, splitTotal: chunks.length }
 }));`;
 
-const configAssignments = Object.entries(configDefaults).map(([name, value], index) => ({
+function configAssignmentsFrom(values) {
+  return Object.entries(values).map(([name, value], index) => ({
   id: `cfg-${index + 1}`,
   name,
   value,
   type: 'string'
-}));
+  }));
+}
+
+const configAssignments = configAssignmentsFrom(configDefaults);
 
 const stickyNote = [
   'Configurar en el nodo Config:',
@@ -616,7 +1147,7 @@ const stickyNote = [
 ].join('\n');
 
 const workflow = {
-  name: 'Mis Finanzas VHV - WhatsApp Agent',
+  name: 'Mis Finanzas VHV - WhatsApp Agent ACTUALIZADO 2026-06-17',
   nodes: [
     {
       parameters: { content: stickyNote, height: 520, width: 560, color: 4 },
@@ -686,7 +1217,12 @@ const workflow = {
       position: [-1200, -760]
     },
     {
-      parameters: { httpMethod: 'POST', path: 'mis-finanzas-whatsapp-agent', options: {} },
+      parameters: {
+        httpMethod: 'POST',
+        path: 'mis-finanzas-whatsapp-agent',
+        responseMode: 'lastNode',
+        options: {}
+      },
       id: id('58cfd7e7-bc9e-4b44-bc20-3c7e47ad8d47'),
       name: 'Webhook1',
       type: 'n8n-nodes-base.webhook',
@@ -1125,3 +1661,47 @@ const workflow = {
 const outputPath = join(here, 'mis-finanzas-whatsapp-agent.workflow.json');
 writeFileSync(outputPath, `${JSON.stringify(workflow, null, 2)}\n`, 'utf8');
 console.log(`Workflow generado: ${outputPath}`);
+
+function parseEnvFile(filePath) {
+  if (!existsSync(filePath)) return {};
+  const values = {};
+  const content = readFileSync(filePath, 'utf8');
+  for (const line of content.split(/\r?\n/)) {
+    const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
+    if (!match) continue;
+    let value = match[2].trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    values[match[1]] = value;
+  }
+  return values;
+}
+
+function applyConfigAssignments(workflowJson, values) {
+  const configNode = workflowJson.nodes.find((node) => node.name === 'Config');
+  if (!configNode) return;
+  configNode.parameters.assignments.assignments = configAssignmentsFrom(values);
+}
+
+const envValues = {
+  ...parseEnvFile(join(here, '..', '..', '.env')),
+  ...parseEnvFile(join(here, '..', '..', '.env.local')),
+  ...parseEnvFile(join(here, '..', '..', '.env.production.local'))
+};
+
+if (envValues.ASSISTANT_WEBHOOK_SECRET && envValues.ASSISTANT_ALLOWED_PHONE) {
+  const localWorkflow = JSON.parse(JSON.stringify(workflow));
+  applyConfigAssignments(localWorkflow, {
+    APP_BASE_URL: envValues.APP_BASE_URL || envValues.NEXT_PUBLIC_APP_URL || 'https://misfinanzasvhv.vercel.app',
+    ASSISTANT_WEBHOOK_SECRET: envValues.ASSISTANT_WEBHOOK_SECRET,
+    ASSISTANT_ALLOWED_PHONE: envValues.ASSISTANT_ALLOWED_PHONE,
+    DEFAULT_ACCOUNT_NAME: envValues.DEFAULT_ACCOUNT_NAME || 'Efectivo',
+    EVOLUTION_BASE_URL: envValues.EVOLUTION_BASE_URL || '',
+    EVOLUTION_INSTANCE: envValues.EVOLUTION_INSTANCE || '',
+    EVOLUTION_API_KEY: envValues.EVOLUTION_API_KEY || ''
+  });
+  const localOutputPath = join(here, 'mis-finanzas-whatsapp-agent.local.workflow.json');
+  writeFileSync(localOutputPath, `${JSON.stringify(localWorkflow, null, 2)}\n`, 'utf8');
+  console.log(`Workflow local preconfigurado generado: ${localOutputPath}`);
+}

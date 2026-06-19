@@ -1,7 +1,6 @@
-
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 interface TransactionFormProps {
     type: 'INCOME' | 'EXPENSE';
@@ -19,39 +18,50 @@ interface Account {
     name: string;
 }
 
+interface MetadataCategory extends Category {
+    type: 'INCOME' | 'EXPENSE';
+}
+
+interface MetadataResponse {
+    categories: MetadataCategory[];
+    accounts: Account[];
+}
+
 export default function TransactionForm({ type, onClose, onSuccess }: TransactionFormProps) {
     const [amount, setAmount] = useState('');
     const [description, setDescription] = useState('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [categoryId, setCategoryId] = useState('');
     const [accountId, setAccountId] = useState('');
+    const [status, setStatus] = useState<'PAID' | 'PENDING'>('PAID');
 
     const [categories, setCategories] = useState<Category[]>([]);
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [loading, setLoading] = useState(false);
 
-    // Estados para crear nueva categoría
     const [showNewCategory, setShowNewCategory] = useState(false);
     const [newCategoryName, setNewCategoryName] = useState('');
     const [creatingCategory, setCreatingCategory] = useState(false);
 
     useEffect(() => {
-        fetchMeta();
-    }, [type]);
-
-    const fetchMeta = async () => {
-        try {
-            const res = await fetch('/api/metadata');
-            const data = await res.json();
-            const filteredCats = data.categories.filter((c: any) => c.type === type);
-            setCategories(filteredCats);
-            setAccounts(data.accounts);
-            if (data.accounts.length > 0) setAccountId(data.accounts[0].id);
-            if (filteredCats.length > 0) setCategoryId(filteredCats[0].id);
-        } catch (e) {
-            console.error(e);
+        async function fetchMeta() {
+            try {
+                const res = await fetch('/api/metadata');
+                const data: MetadataResponse = await res.json();
+                const filteredCats = data.categories
+                    .filter((category) => category.type === type)
+                    .map(({ id, name }) => ({ id, name }));
+                setCategories(filteredCats);
+                setAccounts(data.accounts);
+                if (data.accounts.length > 0) setAccountId(data.accounts[0].id);
+                if (filteredCats.length > 0) setCategoryId(filteredCats[0].id);
+            } catch (error) {
+                console.error(error);
+            }
         }
-    };
+
+        void fetchMeta();
+    }, [type]);
 
     const handleCreateCategory = async () => {
         if (!newCategoryName.trim()) return;
@@ -66,7 +76,7 @@ export default function TransactionForm({ type, onClose, onSuccess }: Transactio
 
             if (res.ok) {
                 const newCat = await res.json();
-                setCategories(prev => [...prev, newCat].sort((a, b) => a.name.localeCompare(b.name)));
+                setCategories((prev) => [...prev, newCat].sort((a, b) => a.name.localeCompare(b.name)));
                 setCategoryId(newCat.id);
                 setNewCategoryName('');
                 setShowNewCategory(false);
@@ -94,7 +104,8 @@ export default function TransactionForm({ type, onClose, onSuccess }: Transactio
                     description,
                     type,
                     categoryId,
-                    accountId
+                    accountId,
+                    status
                 })
             });
             if (res.ok) {
@@ -115,18 +126,18 @@ export default function TransactionForm({ type, onClose, onSuccess }: Transactio
             <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-10 fade-in duration-300">
                 <div className={`p-4 text-white flex justify-between items-center ${type === 'INCOME' ? 'bg-emerald-600' : 'bg-rose-600'}`}>
                     <h2 className="text-lg font-bold">Nuevo {type === 'INCOME' ? 'Ingreso' : 'Gasto'}</h2>
-                    <button onClick={onClose} className="text-white/80 hover:text-white">✕</button>
+                    <button onClick={onClose} className="text-white/80 hover:text-white">X</button>
                 </div>
 
                 <form onSubmit={handleSubmit} className="p-6 flex flex-col gap-5">
                     <div>
                         <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Monto</label>
                         <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xl ">$</span>
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xl">$</span>
                             <input
                                 type="number"
                                 value={amount}
-                                onChange={e => setAmount(e.target.value)}
+                                onChange={(e) => setAmount(e.target.value)}
                                 className="w-full pl-8 pr-4 py-3 text-3xl font-bold text-gray-800 border-b-2 border-gray-200 focus:border-blue-500 focus:outline-none transition-colors"
                                 placeholder="0"
                                 autoFocus
@@ -141,7 +152,7 @@ export default function TransactionForm({ type, onClose, onSuccess }: Transactio
                             <input
                                 type="date"
                                 value={date}
-                                onChange={e => setDate(e.target.value)}
+                                onChange={(e) => setDate(e.target.value)}
                                 className="w-full p-2 bg-gray-50 rounded border border-gray-200"
                             />
                         </div>
@@ -149,13 +160,46 @@ export default function TransactionForm({ type, onClose, onSuccess }: Transactio
                             <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Cuenta</label>
                             <select
                                 value={accountId}
-                                onChange={e => setAccountId(e.target.value)}
+                                onChange={(e) => setAccountId(e.target.value)}
                                 className="w-full p-2 bg-gray-50 rounded border border-gray-200"
                             >
-                                {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                                {accounts.map((account) => (
+                                    <option key={account.id} value={account.id}>{account.name}</option>
+                                ))}
                             </select>
                         </div>
                     </div>
+
+                    {type === 'EXPENSE' && (
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">Estado</label>
+                            <div className="grid grid-cols-2 gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setStatus('PAID')}
+                                    className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${status === 'PAID'
+                                        ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
+                                        : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                                        }`}
+                                >
+                                    Pagado
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setStatus('PENDING')}
+                                    className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${status === 'PENDING'
+                                        ? 'border-amber-600 bg-amber-50 text-amber-700'
+                                        : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                                        }`}
+                                >
+                                    Pendiente
+                                </button>
+                            </div>
+                            <p className="mt-2 text-xs text-gray-500">
+                                Si el gasto queda pendiente, esta fecha se usa como vencimiento para la bandeja y el aviso por WhatsApp.
+                            </p>
+                        </div>
+                    )}
 
                     <div>
                         <div className="flex items-center justify-between mb-1">
@@ -174,7 +218,7 @@ export default function TransactionForm({ type, onClose, onSuccess }: Transactio
                                 <input
                                     type="text"
                                     value={newCategoryName}
-                                    onChange={e => setNewCategoryName(e.target.value)}
+                                    onChange={(e) => setNewCategoryName(e.target.value)}
                                     placeholder="Nombre de la categoría..."
                                     className="flex-1 p-2 bg-gray-50 rounded border border-gray-200 focus:ring-2 focus:ring-blue-500"
                                     autoFocus
@@ -191,10 +235,12 @@ export default function TransactionForm({ type, onClose, onSuccess }: Transactio
                         ) : (
                             <select
                                 value={categoryId}
-                                onChange={e => setCategoryId(e.target.value)}
+                                onChange={(e) => setCategoryId(e.target.value)}
                                 className="w-full p-3 bg-gray-50 rounded-lg border border-gray-200 font-medium text-gray-700 focus:ring-2 focus:ring-blue-500"
                             >
-                                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                {categories.map((category) => (
+                                    <option key={category.id} value={category.id}>{category.name}</option>
+                                ))}
                             </select>
                         )}
                     </div>
@@ -204,7 +250,7 @@ export default function TransactionForm({ type, onClose, onSuccess }: Transactio
                         <input
                             type="text"
                             value={description}
-                            onChange={e => setDescription(e.target.value)}
+                            onChange={(e) => setDescription(e.target.value)}
                             className="w-full p-2 bg-gray-50 rounded border border-gray-200"
                             placeholder="Detalle..."
                         />

@@ -49,3 +49,6 @@ next-env.d.ts
 /scratch/
 *.pdf
 ~$*.docx
+docs/n8n/*.local.workflow.json
+/contacts.csv
+docs/n8n/*Antes de duplicar*.json

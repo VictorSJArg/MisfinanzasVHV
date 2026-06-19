@@ -1,0 +1,1 @@
+ALTER TABLE "AlertPreference" ADD COLUMN "alertWindowDays" INTEGER NOT NULL DEFAULT 30;

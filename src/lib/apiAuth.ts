@@ -4,7 +4,7 @@ const ASSISTANT_SECRET_ENV_NAMES = ['ASSISTANT_WEBHOOK_SECRET', 'N8N_WEBHOOK_SEC
 
 function getConfiguredSecret() {
   for (const envName of ASSISTANT_SECRET_ENV_NAMES) {
-    const value = process.env[envName];
+    const value = process.env[envName]?.trim();
     if (value) return value;
   }
   return null;
@@ -44,7 +44,7 @@ export function normalizePhone(value: unknown) {
 }
 
 export function isAllowedAssistantPhone(value: unknown) {
-  const configured = process.env.ASSISTANT_ALLOWED_PHONE;
+  const configured = process.env.ASSISTANT_ALLOWED_PHONE?.trim();
   if (!configured) return true;
 
   const incoming = normalizePhone(value);

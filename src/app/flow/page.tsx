@@ -15,20 +15,33 @@ export default function FlowPage() {
         <div className="h-screen bg-gray-50 dark:bg-slate-950 flex flex-col overflow-hidden transition-colors duration-300">
             <header className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 px-4 py-4 flex items-center justify-between shadow-sm flex-shrink-0">
                 <div className="flex items-center gap-4">
-                    <h1 className="text-xl font-bold tracking-tight text-gray-800 dark:text-slate-100">💰 Mi Finanzas VHV Sup</h1>
+                    <h1 className="text-xl font-bold tracking-tight text-gray-800 dark:text-slate-100">Mi Finanzas VHV Sup</h1>
                     <Link
                         href="/dashboard"
                         className="text-sm text-blue-600 hover:text-blue-700 font-medium hover:underline"
                     >
-                        📊 Dashboard
+                        Dashboard
                     </Link>
                     <Link
                         href="/tarjetas"
                         className="text-sm text-purple-600 hover:text-purple-700 font-medium hover:underline"
                     >
-                        💳 Tarjetas
+                        Tarjetas
+                    </Link>
+                    <Link
+                        href="/alertas"
+                        className="text-sm text-amber-600 hover:text-amber-700 font-medium hover:underline"
+                    >
+                        Alertas
+                    </Link>
+                    <Link
+                        href="/asistente"
+                        className="text-sm text-emerald-600 hover:text-emerald-700 font-medium hover:underline"
+                    >
+                        Asistente
                     </Link>
                 </div>
+
                 <div className="flex gap-2">
                     <ThemeToggle />
                     <ExportButton />
@@ -57,7 +70,7 @@ export default function FlowPage() {
                 <TransactionForm
                     type={modalType}
                     onClose={() => setModalType(null)}
-                    onSuccess={() => setRefreshKey(k => k + 1)}
+                    onSuccess={() => setRefreshKey((key) => key + 1)}
                 />
             )}
         </div>

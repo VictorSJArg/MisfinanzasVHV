@@ -45,6 +45,23 @@ function todayArgentina() {
   });
 }
 
+function normalizeRouteText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function isLikelyPendingCorrection(message) {
+  const text = normalizeRouteText(message);
+  if (!text) return false;
+  if (/^(si|no|ok|dale|confirmo|cancelar|cancela)$/.test(text)) return true;
+  if (/^(opcion\s*)?\d+$/.test(text) || /^la\s+(primera|segunda|tercera|cuarta|quinta)$/.test(text)) return true;
+  if (/\b(mejor|cambialo|cambia|corregi|corregir|en realidad|que sea|ponelo|modifica|modificalo|descripcion|detalle|fecha|hora|monto|importe)\b/.test(text)) return true;
+  const commandSignals = /\b(marca|marcar|cancela|cancelar|crea|crear|carga|cargar|busca|buscar|cuanto|cuánto|resumen|listame|mostrame|que tengo|agenda|recordatorio|tarea|turno|gasto|ingreso)\b/;
+  return text.split(/\s+/).length <= 4 && !commandSignals.test(text);
+}
+
 function money(value) {
   const number = Number(value || 0);
   return `$${number.toLocaleString('es-AR', { maximumFractionDigits: 2 })}`;
@@ -346,12 +363,34 @@ function result(json) {
 
 function confirmationText(payload, appPreview) {
   const preview = appPreview || payload || {};
+  if (preview.action || preview.text || preview.contact || preview.title) {
+    return [
+      'Confirmo esta accion del asistente personal?',
+      preview.previous ? `Actual: ${preview.previous.title || preview.previous.description || ''} ${preview.previous.date || ''}`.trim() : '',
+      preview.title ? `Titulo: ${preview.title}` : '',
+      preview.description ? `Descripcion: ${preview.description}` : '',
+      preview.contact ? `Contacto: ${preview.contact}` : '',
+      preview.phone ? `Telefono: ${preview.phone}` : '',
+      preview.date ? `Fecha: ${preview.date}` : '',
+      preview.priority ? `Prioridad: ${preview.priority}` : '',
+      preview.status ? `Estado: ${preview.status}` : '',
+      preview.location ? `Lugar: ${preview.location}` : '',
+      preview.participants ? `Con: ${preview.participants}` : '',
+      preview.text ? `Mensaje: ${preview.text}` : '',
+      '',
+      'Responde SI para confirmar o NO para cancelar.'
+    ].filter(Boolean).join('\n');
+  }
+
   const type = preview.type === 'INCOME' ? 'ingreso' : 'gasto';
   return [
     `Confirmo ${type}${preview.amount ? ` de ${money(preview.amount)}` : ''}?`,
+    preview.previous ? `Actual: ${preview.previous.date || ''} ${preview.previous.description || ''} ${preview.previous.amount ? money(preview.previous.amount) : ''}`.trim() : '',
     preview.date ? `Fecha: ${preview.date}` : '',
     preview.categoryName || preview.category ? `Categoria: ${preview.categoryName || preview.category}` : '',
+    preview.accountName ? `Cuenta: ${preview.accountName}` : '',
     preview.description ? `Detalle: ${preview.description}` : '',
+    preview.status ? `Estado: ${preview.status}` : '',
     '',
     'Responde SI para confirmar o NO para cancelar.'
   ].filter(Boolean).join('\n');
@@ -395,7 +434,7 @@ async function main() {
   if (event.messageId) staticData.processedMessageIds[event.messageId] = Date.now();
 
   const lowerText = event.text.toLowerCase();
-  const pending = staticData.pendingConfirmations[event.phone];
+  let pending = staticData.pendingConfirmations[event.phone];
   const yes = ['si', 'sí', 'confirmo', 'confirmar', 'ok', 'dale', 'guardar', 'cargar'];
   const no = ['no', 'cancelar', 'cancela', 'anular', 'descartar'];
 
@@ -441,6 +480,11 @@ async function main() {
     ocrText ? `Texto de imagen/caption: ${ocrText}` : ''
   ].filter(Boolean).join('\n\n');
 
+  if (pending && !isLikelyPendingCorrection(normalizedMessage)) {
+    delete staticData.pendingConfirmations[event.phone];
+    pending = null;
+  }
+
   if (!normalizedMessage && !imageBase64) {
     const reply = 'No pude leer el mensaje. Probame mandando texto, audio claro o una foto legible.';
     await sendWhatsApp(event.phone, reply);
@@ -454,7 +498,11 @@ async function main() {
       today: todayArgentina(),
       phone: event.phone,
       categories: metadataResponse.data?.data?.categories || [],
-      accounts: metadataResponse.data?.data?.accounts || []
+      accounts: metadataResponse.data?.data?.accounts || [],
+      personalContacts: metadataResponse.data?.data?.personalContacts || [],
+      chatHistory: metadataResponse.data?.data?.chatHistory || [],
+      pendingAssistantSession: metadataResponse.data?.data?.pendingAssistantSession || null,
+      pendingConfirmation: pending || null
     },
     media: {
       transcript,
@@ -477,12 +525,69 @@ async function main() {
     return result({ success: false, route: 'invalid_agent_output', agentOutput });
   }
 
+  function normalizeLooseText(value) {
+    return String(value || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+  }
+
+  function hasPersonalTargetPayload(payload) {
+    return Boolean(
+      payload?.id ||
+      payload?.taskId ||
+      payload?.reminderId ||
+      payload?.eventId ||
+      payload?.query ||
+      payload?.target ||
+      payload?.targetTitle ||
+      payload?.currentTitle ||
+      payload?.originalTitle ||
+      payload?.title ||
+      payload?.task ||
+      payload?.reminder ||
+      payload?.event
+    );
+  }
+
+  function inferPersonalQueryFromText(text) {
+    const normalized = normalizeLooseText(text);
+    const patterns = [
+      ['turno', /\bturnos?\b/],
+      ['cita', /\bcitas?\b/],
+      ['reunion', /\breuniones?\b|\breunion\b/],
+      ['agenda', /\bagenda\b|\beventos?\b/],
+      ['recordatorio', /\brecordatorios?\b/],
+      ['tarea', /\btareas?\b/]
+    ];
+    const match = patterns.find(([, pattern]) => pattern.test(normalized));
+    return match ? match[0] : '';
+  }
+
+  const personalUpdateActions = new Set([
+    'update_personal_task',
+    'update_personal_reminder',
+    'update_personal_event',
+    'update_personal_item'
+  ]);
+  if (personalUpdateActions.has(assistantRequest.action) && !hasPersonalTargetPayload(assistantRequest.payload || {})) {
+    const inferredQuery = inferPersonalQueryFromText(event.text || event.message || '');
+    assistantRequest.action = 'update_personal_item';
+    assistantRequest.payload = {
+      ...(assistantRequest.payload || {}),
+      query: inferredQuery || event.text || event.message || '',
+      searchAllPersonalTypes: true
+    };
+  }
+
   const appResponse = await callFinanceApp(event.phone, assistantRequest, assistantRequest.confirmed === true);
   const requiresConfirmation = appResponse.status === 409 || appResponse.data?.requiresConfirmation === true;
 
   if (requiresConfirmation) {
     staticData.pendingConfirmations[event.phone] = {
       assistantRequest,
+      preview: appResponse.data?.preview || assistantRequest.payload || {},
+      action: appResponse.data?.action || assistantRequest.action,
       createdAt: Date.now(),
       expiresAt: Date.now() + 10 * 60 * 1000
     };

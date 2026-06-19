@@ -45,6 +45,7 @@ if (pending && no.includes(text)) {
 return [{
   json: {
     ...item,
-    route: 'new_request'
+    route: 'new_request',
+    pendingConfirmation: pending || null
   }
 }];

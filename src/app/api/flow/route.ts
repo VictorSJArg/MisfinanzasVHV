@@ -14,6 +14,7 @@ import {
 } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { prisma } from '@/lib/prisma';
+import { autoPayReachedExcludedExpenseTransactions } from '@/lib/alertExclusions';
 import { CreditCardProjection, getCreditCardProjectionsForRange } from '@/lib/creditCardProjections';
 
 interface Period {
@@ -32,6 +33,7 @@ interface CategoryRow {
   parentId: string | null;
   sortOrder: number;
   userId: string;
+  alertsExcluded?: boolean;
 }
 
 interface CellTransaction {
@@ -306,11 +308,13 @@ export async function GET(request: NextRequest) {
     const user = await prisma.user.findFirst();
     if (!user) return NextResponse.json({ error: 'No user found' }, { status: 400 });
 
+    await autoPayReachedExcludedExpenseTransactions(user.id);
+
     const start = new Date(startStr.includes('T') ? startStr : `${startStr}T00:00:00`);
     const end = endOfDay(new Date(endStr.includes('T') ? endStr : `${endStr}T23:59:59.999`));
     const periods = createPeriods(start, end, granularity);
 
-    const [transactions, categories, creditCardProjections] = await Promise.all([
+    const [transactions, categories, creditCardProjections, alertExclusions] = await Promise.all([
       prisma.transaction.findMany({
         where: {
           userId: user.id,
@@ -321,8 +325,17 @@ export async function GET(request: NextRequest) {
         orderBy: { date: 'asc' }
       }),
       loadCategories(user.id),
-      getCreditCardProjectionsForRange(user.id, start, end)
+      getCreditCardProjectionsForRange(user.id, start, end),
+      prisma.alertExclusion.findMany({
+        where: { userId: user.id, description: '' },
+        select: { categoryId: true }
+      })
     ]);
+    const alertExcludedCategories = new Set(alertExclusions.map((exclusion) => exclusion.categoryId));
+    const categoriesWithAlertState = categories.map((category) => ({
+      ...category,
+      alertsExcluded: alertExcludedCategories.has(category.id)
+    }));
 
     const transactionBuckets = new Map<string, CellData>();
     for (const transaction of transactions) {
@@ -350,7 +363,7 @@ export async function GET(request: NextRequest) {
       transactionBuckets.set(key, bucket);
     }
 
-    const rows = buildTransactionRows(categories, periods, transactionBuckets);
+    const rows = buildTransactionRows(categoriesWithAlertState, periods, transactionBuckets);
     const incomeRows = rows.filter((row) => row.category.type === 'INCOME');
     let expenseRows = rows.filter((row) => row.category.type === 'EXPENSE');
 

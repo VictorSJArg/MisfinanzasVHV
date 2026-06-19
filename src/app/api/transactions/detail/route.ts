@@ -37,7 +37,29 @@ export async function GET(request: NextRequest) {
         orderBy: { date: 'desc' }
     });
 
-    return NextResponse.json(transactions);
+    const userId = transactions[0]?.userId;
+    if (!userId) {
+        return NextResponse.json(transactions);
+    }
+
+    const exclusions = await prisma.alertExclusion.findMany({
+        where: {
+            userId,
+            categoryId
+        },
+        select: { description: true }
+    });
+    const excludedCategory = exclusions.some((exclusion) => exclusion.description === '');
+    const excludedDescriptions = new Set(
+        exclusions
+            .filter((exclusion) => exclusion.description !== '')
+            .map((exclusion) => exclusion.description)
+    );
+
+    return NextResponse.json(transactions.map((transaction) => ({
+        ...transaction,
+        alertsExcluded: excludedCategory || excludedDescriptions.has(transaction.description?.trim() || '')
+    })));
 }
 
 // PUT - Actualizar una transaccion y mantener el saldo de cuenta sincronizado.

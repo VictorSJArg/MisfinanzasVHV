@@ -19,6 +19,17 @@ model User {
   categories   Category[]
   budgets      Budget[]
   accounts     Account[]
+  alertPreference AlertPreference?
+  alertDispatchLogs AlertDispatchLog[]
+  alertDismissals AlertDismissal[]
+  alertExclusions AlertExclusion[]
+  personalContacts PersonalContact[]
+  personalReminders PersonalReminder[]
+  personalTasks PersonalTask[]
+  personalEvents PersonalEvent[]
+  outboundMessages OutboundMessage[]
+  assistantActionLogs AssistantActionLog[]
+  assistantScheduledAlerts AssistantScheduledAlert[]
 }
 
 model Account {
@@ -187,4 +198,188 @@ model AssistantHistory {
   phone     String   @unique
   messages  Json     // [ { role: 'user', content: '...' }, { role: 'assistant', content: '...' } ]
   updatedAt DateTime @updatedAt
+}
+
+model AlertPreference {
+  id         String   @id @default(uuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id])
+  enabled     Boolean  @default(true)
+  phone       String?
+  daysBefore  Int      @default(1)
+  alertWindowDays Int   @default(30)
+  notifyHour  Int      @default(8)
+  timezone    String   @default("America/Argentina/Buenos_Aires")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AlertDispatchLog {
+  id           String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  alertKey      String
+  scheduledFor  DateTime
+  channel       String   @default("WHATSAPP")
+  createdAt     DateTime @default(now())
+
+  @@unique([channel, alertKey, scheduledFor])
+  @@index([userId, scheduledFor])
+}
+
+model AlertDismissal {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  alertKey    String
+  sourceType  String
+  sourceId    String
+  title       String
+  dueDate     DateTime
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, alertKey])
+  @@index([userId, dueDate])
+}
+
+model AlertExclusion {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  categoryId  String
+  description String   @default("")
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, categoryId, description])
+  @@index([userId, categoryId])
+}
+
+model PersonalContact {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  phone     String
+  alias     String?
+  relation  String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  outboundMessages OutboundMessage[]
+
+  @@unique([userId, phone])
+  @@index([userId, name])
+}
+
+model PersonalReminder {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  remindAt    DateTime
+  priority    String    @default("MEDIUM") // LOW, MEDIUM, HIGH
+  channel     String    @default("WHATSAPP") // WHATSAPP, APP
+  recurrence  String?   // NONE, DAILY, WEEKLY, MONTHLY, YEARLY, CUSTOM
+  status      String    @default("PENDING") // PENDING, DONE, CANCELLED
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId, remindAt])
+  @@index([userId, status])
+}
+
+model PersonalTask {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  dueAt       DateTime?
+  priority    String    @default("MEDIUM") // LOW, MEDIUM, HIGH
+  status      String    @default("PENDING") // PENDING, IN_PROGRESS, DONE, CANCELLED
+  tags        String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId, dueAt])
+  @@index([userId, status])
+}
+
+model PersonalEvent {
+  id           String    @id @default(uuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title        String
+  description  String?
+  location     String?
+  startsAt     DateTime
+  endsAt       DateTime?
+  participants String?
+  status       String    @default("SCHEDULED") // SCHEDULED, DONE, CANCELLED
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([userId, startsAt])
+  @@index([userId, status])
+}
+
+model OutboundMessage {
+  id          String           @id @default(uuid())
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contactId   String?
+  contact     PersonalContact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  phone       String
+  contactName String?
+  text        String
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  status      String           @default("DRAFT") // DRAFT, SCHEDULED, SENT, FAILED, CANCELLED
+  error       String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([userId, scheduledAt])
+  @@index([userId, status])
+}
+
+model AssistantActionLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  source    String   @default("APP") // APP, WHATSAPP, CHAT, CRON
+  action    String
+  status    String   @default("SUCCESS") // SUCCESS, FAILED, PENDING_CONFIRMATION
+  summary   String?
+  payload   Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, action])
+}
+
+model AssistantScheduledAlert {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceType  String   // REMINDER, EVENT, MESSAGE
+  sourceId    String
+  scheduledFor DateTime
+  timezone    String   @default("America/Argentina/Buenos_Aires")
+  version     Int      @default(1)
+  status      String   @default("SCHEDULED") // SCHEDULED, SENT, SKIPPED, FAILED, CANCELLED
+  provider    String   @default("N8N")
+  externalJobId String?
+  sentAt      DateTime?
+  error       String?
+  payload     Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([sourceType, sourceId, version])
+  @@index([userId, scheduledFor])
+  @@index([sourceType, sourceId])
+  @@index([status, scheduledFor])
 }

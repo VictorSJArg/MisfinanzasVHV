@@ -13,6 +13,10 @@ interface TransactionDetail {
     amount: number;
     description: string | null;
     accountName: string;
+    categoryId?: string | null;
+    status?: string;
+    referenceId?: string;
+    alertsExcluded?: boolean;
 }
 
 interface CellDetail {
@@ -28,7 +32,7 @@ interface FlowData {
 }
 
 interface RowData {
-    category: { id: string, name: string, type: string, isExpandable?: boolean, isVirtual?: boolean };
+    category: { id: string, name: string, type: string, isExpandable?: boolean, isVirtual?: boolean, alertsExcluded?: boolean };
     cells: number[];
     cellDetails?: CellDetail[];
     total: number;
@@ -47,6 +51,14 @@ interface EditingGroup {
     categoryId: string;
     oldDescription: string | null;
     value: string;
+}
+
+interface TransactionGroup {
+    description: string;
+    cells: number[];
+    total: number;
+    cellTxs: TransactionDetail[][];
+    alertsExcluded: boolean;
 }
 
 interface DetailModalData {
@@ -818,6 +830,65 @@ export default function FlowGrid() {
         fetchData(expandedCategories.size > 0);
     };
 
+    const toggleAlertExclusion = async (categoryId: string, excluded: boolean, description?: string | null) => {
+        try {
+            const res = await fetch('/api/alerts/exclusions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    categoryId,
+                    description: description || '',
+                    excluded
+                })
+            });
+
+            const result = await res.json();
+            if (!res.ok || !result.success) {
+                throw new Error(result.error || 'No se pudo actualizar alertas');
+            }
+
+            if (description === undefined) {
+                setData(prevData => {
+                    if (!prevData) return prevData;
+                    const updateRows = (rows: RowData[]) => rows.map(row => (
+                        row.category.id === categoryId
+                            ? { ...row, category: { ...row.category, alertsExcluded: excluded } }
+                            : row
+                    ));
+
+                    return {
+                        ...prevData,
+                        incomeRows: updateRows(prevData.incomeRows),
+                        expenseRows: updateRows(prevData.expenseRows)
+                    };
+                });
+            }
+
+            setDetailsCache(prev => {
+                const categoryDetails = prev[categoryId];
+                if (!categoryDetails) return prev;
+
+                return {
+                    ...prev,
+                    [categoryId]: categoryDetails.map(tx => {
+                        const matchesDescription = description === undefined || (tx.description || '') === (description || '');
+                        return matchesDescription ? { ...tx, alertsExcluded: excluded } : tx;
+                    })
+                };
+            });
+
+            if (result.autoPaidCount > 0) {
+                await fetchData(true);
+                if (expandedCategories.has(categoryId)) {
+                    await fetchCategoryDetails(categoryId);
+                }
+            }
+        } catch (error) {
+            console.error(error);
+            alert('No se pudo actualizar si se considera en Alertas.');
+        }
+    };
+
     const toggleCellStatus = async (txs: any[]) => {
         if (!txs || txs.length === 0) return;
 
@@ -907,7 +978,7 @@ export default function FlowGrid() {
         const transactions = detailsCache[row.category.id];
         if (!transactions || !data) return [];
 
-        const groups: { [key: string]: { description: string, cells: number[], total: number, cellTxs: any[][] } } = {};
+        const groups: { [key: string]: TransactionGroup } = {};
 
         transactions.forEach(tx => {
             // Encontrar columna correspondiente
@@ -922,13 +993,15 @@ export default function FlowGrid() {
                         description: tx.description || '',
                         cells: new Array(data.columns.length).fill(0),
                         total: 0,
-                        cellTxs: new Array(data.columns.length).fill(null).map(() => [])
+                        cellTxs: new Array(data.columns.length).fill(null).map(() => []),
+                        alertsExcluded: Boolean((row.category as any).alertsExcluded || tx.alertsExcluded)
                     };
                 }
                 const amount = Number(tx.amount);
                 groups[key].cells[colIndex] += amount;
                 groups[key].total += amount;
                 groups[key].cellTxs[colIndex].push(tx);
+                groups[key].alertsExcluded = groups[key].alertsExcluded || Boolean((row.category as any).alertsExcluded || tx.alertsExcluded);
             }
         });
 
@@ -1132,6 +1205,20 @@ export default function FlowGrid() {
                             {!(row.category as any).isVirtual && (
                                 <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleAlertExclusion(row.category.id, !row.category.alertsExcluded);
+                                        }}
+                                        className={`p-0.5 transition-colors rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${
+                                            row.category.alertsExcluded
+                                                ? 'text-amber-500 hover:text-amber-400'
+                                                : 'text-gray-300 hover:text-emerald-500 dark:hover:text-emerald-400'
+                                        }`}
+                                        title={row.category.alertsExcluded ? 'No se considera en Alertas. Click para incluir.' : 'Se considera en Alertas. Click para excluir.'}
+                                    >
+                                        {row.category.alertsExcluded ? '🔕' : '🔔'}
+                                    </button>
+                                    <button
                                         onClick={(e) => { e.stopPropagation(); moveCategory(row.category.id, type, 'up'); }}
                                         className="p-0.5 text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors rounded hover:bg-gray-200 dark:hover:bg-slate-700"
                                         title="Subir categoría"
@@ -1245,8 +1332,8 @@ export default function FlowGrid() {
                 {/* BLOCK 1: SubRows (e.g. Credit Cards) - Purple */}
                 {isExpanded && row.subRows && row.subRows.length > 0 && (
                     row.subRows.map((subRow, subIdx) => (
-                        <tr key={`${row.category.id}-sub-${subRow.category.id}`} className="bg-purple-50/50 dark:bg-purple-900/10">
-                            <td className="sticky left-0 bg-purple-50/50 dark:bg-purple-900/10 z-10 px-2 py-1 border-r border-purple-200 dark:border-purple-800">
+                        <tr key={`${row.category.id}-sub-${subRow.category.id}`} className="bg-purple-50 dark:bg-purple-950">
+                            <td className="sticky left-0 bg-purple-50 dark:bg-purple-950 z-10 px-2 py-1 border-r border-purple-200 dark:border-purple-800">
                                 <div className="flex items-center gap-2 pl-6 text-sm text-gray-600 dark:text-slate-400">
                                     <span>↳</span>
                                     <span className="truncate" title={subRow.category.name}>{subRow.category.name}</span>
@@ -1281,7 +1368,7 @@ export default function FlowGrid() {
                     transactionGroups.map((group, groupIdx) => (
                         <tr 
                             key={`${row.category.id}-detail-${groupIdx}`} 
-                            className={`bg-gray-50/50 dark:bg-slate-800/30 ${draggedSubConcept?.categoryId === row.category.id && draggedSubConcept?.groupIdx === groupIdx ? 'opacity-50' : ''}`}
+                            className={`bg-gray-50 dark:bg-slate-800 ${draggedSubConcept?.categoryId === row.category.id && draggedSubConcept?.groupIdx === groupIdx ? 'opacity-50' : ''}`}
                             draggable
                             onDragStart={(e) => {
                                 setDraggedSubConcept({ categoryId: row.category.id, groupIdx, type });
@@ -1304,7 +1391,7 @@ export default function FlowGrid() {
                             }}
                             onDragEnd={() => setDraggedSubConcept(null)}
                         >
-                            <td className="sticky left-0 bg-gray-50/50 dark:bg-slate-800/50 z-10 px-2 py-1 border-r border-gray-200 dark:border-slate-800">
+                            <td className="sticky left-0 bg-gray-50 dark:bg-slate-800 z-10 px-2 py-1 border-r border-gray-200 dark:border-slate-800">
                                 <div className="flex items-center gap-1 pl-6 text-xs text-gray-500 dark:text-slate-400 justify-between group/subrow">
                                     <div className="flex items-center gap-1 overflow-hidden">
                                         <span className="text-gray-300">└─</span>
@@ -1333,6 +1420,20 @@ export default function FlowGrid() {
                                     </div>
                                     {/* Sub-concept reorder buttons */}
                                     <div className="flex items-center gap-0.5 opacity-0 group-hover/subrow:opacity-100 transition-opacity flex-shrink-0 cursor-grab active:cursor-grabbing">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                toggleAlertExclusion(row.category.id, !group.alertsExcluded, group.description);
+                                            }}
+                                            className={`p-0.5 transition-colors rounded hover:bg-gray-200 dark:hover:bg-slate-700 ${
+                                                group.alertsExcluded
+                                                    ? 'text-amber-500 hover:text-amber-400'
+                                                    : 'text-gray-300 hover:text-emerald-500 dark:hover:text-emerald-400'
+                                            }`}
+                                            title={group.alertsExcluded ? 'Este concepto no se considera en Alertas. Click para incluir.' : 'Este concepto se considera en Alertas. Click para excluir.'}
+                                        >
+                                            {group.alertsExcluded ? '🔕' : '🔔'}
+                                        </button>
                                         <button
                                             onClick={(e) => { e.stopPropagation(); moveSubConcept(row.category.id, groupIdx, transactionGroups, 'up'); }}
                                             className="p-0.5 text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors rounded hover:bg-gray-200 dark:hover:bg-slate-700"
@@ -1441,7 +1542,7 @@ export default function FlowGrid() {
                                 );
                             })}
                             {showVariations && data.columns.length > 1 && (
-                                <td className="bg-blue-50/20"></td>
+                                <td className="bg-blue-50 dark:bg-blue-950"></td>
                             )}
                             <td className={`px-4 py-1 text-right text-xs font-semibold bg-gray-50 dark:bg-slate-900 border-l border-gray-200 dark:border-slate-800 whitespace-nowrap sticky right-0 z-10 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)] ${
                                 type === 'INCOME'
@@ -1456,8 +1557,8 @@ export default function FlowGrid() {
                 {/* Add new concept row - clean look, shows + only on hover */}
                 {
                     isExpanded && (
-                        <tr key={`${row.category.id}-new-row`} className="bg-gray-50/20 group/addrow">
-                            <td className="sticky left-0 bg-gray-50/20 z-10 px-2 py-1 border-r border-gray-200">
+                        <tr key={`${row.category.id}-new-row`} className="bg-gray-50 dark:bg-slate-800 group/addrow">
+                            <td className="sticky left-0 bg-gray-50 dark:bg-slate-800 z-10 px-2 py-1 border-r border-gray-200 dark:border-slate-800">
                                 <div className="flex items-center gap-1 pl-6">
                                     <span className="text-xs text-gray-300 italic">nuevo...</span>
                                 </div>
@@ -1495,7 +1596,7 @@ export default function FlowGrid() {
                                 );
                             })}
                             {showVariations && data.columns.length > 1 && (
-                                <td className="bg-transparent"></td>
+                                <td className="bg-gray-50 dark:bg-slate-800"></td>
                             )}
                             <td className="px-4 py-1 text-right text-xs bg-gray-50 dark:bg-slate-900 border-l border-gray-200 dark:border-slate-800 whitespace-nowrap sticky right-0 z-10 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                             </td>
@@ -1753,16 +1854,16 @@ export default function FlowGrid() {
                 {/* Main Grid */}
                 <div className="relative min-w-max">
                     <table className="w-full border-collapse text-sm">
-                        <thead className="bg-muted/50 sticky top-0 z-20">
+                        <thead className="sticky top-0 z-40 bg-white dark:bg-slate-950 shadow-sm">
                             <tr>
-                                <th className="px-4 py-2 text-left text-sm font-bold text-foreground uppercase tracking-wider sticky left-0 bg-muted/90 z-30 border-r border-border min-w-[200px] backdrop-blur-sm">
+                                <th className="px-4 py-2 text-left text-sm font-bold text-foreground uppercase tracking-wider sticky left-0 bg-white dark:bg-slate-950 z-50 border-r border-border min-w-[200px]">
                                     Categoría / Concepto
                                 </th>
                                 {data.columns.map((col, idx) => (
                                     <Fragment key={idx}>
                                         <th
                                             onClick={() => handleSort(idx)}
-                                            className="px-2 py-2 text-center text-sm font-semibold text-gray-700 dark:text-slate-200 tracking-wider min-w-[80px] cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 select-none group/th"
+                                            className="px-2 py-2 text-center text-sm font-semibold text-gray-700 dark:text-slate-200 tracking-wider min-w-[80px] bg-white dark:bg-slate-950 border-b border-border cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-900 select-none group/th"
                                         >
                                             {col.labelSub ? (
                                                 <div className="flex flex-col items-center">
@@ -1776,7 +1877,7 @@ export default function FlowGrid() {
                                         {showPercentages && (
                                             <th
                                                 onClick={() => handleSort(idx)}
-                                                className="px-1 py-1 text-center text-xs font-medium text-gray-400 bg-gray-50 dark:bg-slate-800 uppercase tracking-widest w-[40px] border-r border-gray-100 dark:border-slate-700 cursor-pointer hover:bg-gray-200 dark:hover:bg-slate-700 select-none"
+                                                className="px-1 py-1 text-center text-xs font-medium text-gray-400 bg-gray-100 dark:bg-slate-900 uppercase tracking-widest w-[40px] border-r border-gray-100 dark:border-slate-700 cursor-pointer hover:bg-gray-200 dark:hover:bg-slate-800 select-none"
                                             >
                                                 %
                                             </th>
@@ -1784,34 +1885,38 @@ export default function FlowGrid() {
                                     </Fragment>
                                 ))}
                                 {showVariations && data.columns.length > 1 && (
-                                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px] bg-blue-50 border-l-2 border-blue-200">
+                                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-slate-300 uppercase tracking-wider min-w-[80px] bg-blue-50 dark:bg-blue-950 border-l-2 border-blue-200 dark:border-blue-900">
                                         Variación
                                     </th>
                                 )}
                                 <th
                                     onClick={() => handleSort('total')}
-                                    className="px-4 py-2 text-right text-sm font-bold text-foreground uppercase tracking-wider sticky right-0 bg-muted/90 z-30 border-l border-border min-w-[120px] backdrop-blur-sm shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                                    className="px-4 py-2 text-right text-sm font-bold text-foreground uppercase tracking-wider sticky right-0 bg-white dark:bg-slate-950 z-50 border-l border-border min-w-[120px] shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                                     Total
                                 </th>
                                 {showPercentages && (
-                                    <th className="px-2 py-2 text-right text-[10px] font-semibold text-muted-foreground uppercase tracking-wider sticky right-[-50px] bg-muted z-30 border-l border-border">
+                                    <th className="px-2 py-2 text-right text-[10px] font-semibold text-muted-foreground uppercase tracking-wider sticky right-[-50px] bg-white dark:bg-slate-950 z-50 border-l border-border">
                                         %
                                     </th>
                                 )}
                             </tr>
                             {/* Summary Headers */}
-                            <tr className="bg-blue-50/20">
-                                <td className="sticky left-0 bg-blue-50/20 z-10 px-4 py-2 border-r border-blue-100 dark:border-blue-900/30 font-semibold text-blue-700 dark:text-blue-400">
+                            <tr className="bg-blue-50 dark:bg-blue-950">
+                                <td className="sticky left-0 bg-blue-50 dark:bg-blue-950 z-40 px-4 py-2 border-r border-blue-100 dark:border-blue-900 font-semibold text-blue-700 dark:text-blue-400">
                                     🟢 Ingresos Totales
                                 </td>
+                                <td
+                                    colSpan={data.columns.length * (showPercentages ? 2 : 1) + (showVariations && data.columns.length > 1 ? 1 : 0) + 1 + (showPercentages ? 1 : 0)}
+                                    className="bg-blue-50 dark:bg-blue-950 border-b border-blue-100 dark:border-blue-900"
+                                />
                             </tr>
                         </thead>
                         <tbody className="bg-white dark:bg-slate-900 divide-y divide-gray-200 dark:divide-slate-800">
                             {/* INGRESOS SECTION */}
                             {filterType !== 'EXPENSE' && (
                                 <>
-                                    <tr className="bg-emerald-50/50 dark:bg-emerald-900/10">
-                                        <td className="sticky left-0 bg-emerald-50/50 dark:bg-emerald-900/10 z-10 px-4 py-2 font-bold text-emerald-800 dark:text-emerald-300 border-r border-gray-200 dark:border-slate-800 flex justify-between items-center group">
+                                    <tr className="bg-emerald-50 dark:bg-emerald-950">
+                                        <td className="sticky left-0 bg-emerald-50 dark:bg-emerald-950 z-10 px-4 py-2 font-bold text-emerald-800 dark:text-emerald-300 border-r border-gray-200 dark:border-slate-800 flex justify-between items-center group">
                                             <span>📈 INGRESOS</span>
                                             <button
                                                 onClick={() => handleAddCategory('INCOME')}
@@ -1827,7 +1932,7 @@ export default function FlowGrid() {
                                                 {showPercentages && <td></td>}
                                             </Fragment>
                                         ))}
-                                        {showVariations && data.columns.length > 1 && <td className="bg-blue-50/50 dark:bg-slate-800/30"></td>}
+                                        {showVariations && data.columns.length > 1 && <td className="bg-blue-50 dark:bg-blue-950"></td>}
                                         <td></td>
                                     </tr>
                                     {getSortedRows(getFilteredRows(data.incomeRows, 'INCOME')).map((row, i) => (
@@ -1835,20 +1940,20 @@ export default function FlowGrid() {
                                             {renderCategoryRow(row, 'INCOME')}
                                         </Fragment>
                                     ))}
-                                    <tr className="bg-emerald-100/50 dark:bg-emerald-900/20 font-bold text-emerald-900 dark:text-emerald-300">
-                                        <td className="sticky left-0 bg-emerald-100 dark:bg-emerald-900/30 z-10 px-4 py-2 border-r border-emerald-200 dark:border-emerald-800">Total Ingresos</td>
+                                    <tr className="bg-emerald-100 dark:bg-emerald-950 font-bold text-emerald-900 dark:text-emerald-300">
+                                        <td className="sticky left-0 bg-emerald-100 dark:bg-emerald-950 z-10 px-4 py-2 border-r border-emerald-200 dark:border-emerald-800">Total Ingresos</td>
                                         {calculatedTotals.income.map((val, i) => (
                                             <Fragment key={i}>
                                                 <td className="px-3 py-2 text-right font-medium">{formatMoney(val)}</td>
                                                 {showPercentages && (
-                                                    <td className="px-1 py-2 text-right text-xs text-gray-400 dark:text-slate-500 bg-emerald-50/20 dark:bg-emerald-900/10 tabular-nums">
+                                                    <td className="px-1 py-2 text-right text-xs text-gray-400 dark:text-slate-500 bg-emerald-50 dark:bg-emerald-950 tabular-nums">
                                                         100%
                                                     </td>
                                                 )}
                                             </Fragment>
                                         ))}
                                         {showVariations && data.columns.length > 1 && (
-                                            <td className={`px-2 py-2 text-center font-bold bg-blue-100/50 dark:bg-slate-800/30 border-l-2 border-blue-200 dark:border-slate-700 ${getVariationClass(
+                                            <td className={`px-2 py-2 text-center font-bold bg-blue-100 dark:bg-blue-950 border-l-2 border-blue-200 dark:border-slate-700 ${getVariationClass(
                                                 calculatedTotals.income[calculatedTotals.income.length - 1] || 0,
                                                 calculatedTotals.income[calculatedTotals.income.length - 2] || 0
                                             )}`}>
@@ -1858,10 +1963,10 @@ export default function FlowGrid() {
                                                 )}
                                             </td>
                                         )}
-                                        <td className="px-4 py-2 text-right font-bold bg-emerald-100 dark:bg-emerald-900/30">
+                                        <td className="px-4 py-2 text-right font-bold bg-emerald-100 dark:bg-emerald-950">
                                             {formatMoney(calculatedTotals.incomeGrandTotal)}
                                         </td>
-                                        {showPercentages && <td className="bg-emerald-100 dark:bg-emerald-900/30"></td>}
+                                        {showPercentages && <td className="bg-emerald-100 dark:bg-emerald-950"></td>}
                                     </tr>
                                 </>
                             )}
@@ -1873,8 +1978,8 @@ export default function FlowGrid() {
                             {/* GASTOS SECTION */}
                             {filterType !== 'INCOME' && (
                                 <>
-                                    <tr className="bg-rose-50/50 dark:bg-rose-900/10">
-                                        <td className="sticky left-0 bg-rose-50/50 dark:bg-rose-900/10 z-10 px-4 py-2 font-bold text-rose-800 dark:text-rose-300 border-r border-gray-200 dark:border-slate-800 flex justify-between items-center group">
+                                    <tr className="bg-rose-50 dark:bg-rose-950">
+                                        <td className="sticky left-0 bg-rose-50 dark:bg-rose-950 z-10 px-4 py-2 font-bold text-rose-800 dark:text-rose-300 border-r border-gray-200 dark:border-slate-800 flex justify-between items-center group">
                                             <span>📉 GASTOS</span>
                                             <button
                                                 onClick={() => handleAddCategory('EXPENSE')}
@@ -1890,7 +1995,7 @@ export default function FlowGrid() {
                                                 {showPercentages && <td></td>}
                                             </Fragment>
                                         ))}
-                                        {showVariations && data.columns.length > 1 && <td className="bg-blue-50/50 dark:bg-slate-800/30"></td>}
+                                        {showVariations && data.columns.length > 1 && <td className="bg-blue-50 dark:bg-blue-950"></td>}
                                         <td></td>
                                     </tr>
                                     {getSortedRows(getFilteredRows(data.expenseRows, 'EXPENSE')).map((row, i) => (
@@ -1898,20 +2003,20 @@ export default function FlowGrid() {
                                             {renderCategoryRow(row, 'EXPENSE')}
                                         </Fragment>
                                     ))}
-                                    <tr className="bg-rose-100/50 dark:bg-rose-900/20 font-bold text-rose-900 dark:text-rose-300">
-                                        <td className="sticky left-0 bg-rose-100 dark:bg-rose-900/30 z-10 px-4 py-2 border-r border-rose-200 dark:border-rose-800">Total Gastos</td>
+                                    <tr className="bg-rose-100 dark:bg-rose-950 font-bold text-rose-900 dark:text-rose-300">
+                                        <td className="sticky left-0 bg-rose-100 dark:bg-rose-950 z-10 px-4 py-2 border-r border-rose-200 dark:border-rose-800">Total Gastos</td>
                                         {calculatedTotals.expense.map((val, i) => (
                                             <Fragment key={i}>
                                                 <td className="px-3 py-2 text-right font-medium">{formatMoney(val)}</td>
                                                 {showPercentages && (
-                                                    <td className="px-1 py-2 text-right text-xs text-gray-400 dark:text-slate-500 bg-rose-50/20 dark:bg-rose-900/10 tabular-nums">
+                                                    <td className="px-1 py-2 text-right text-xs text-gray-400 dark:text-slate-500 bg-rose-50 dark:bg-rose-950 tabular-nums">
                                                         100%
                                                     </td>
                                                 )}
                                             </Fragment>
                                         ))}
                                         {showVariations && data.columns.length > 1 && (
-                                            <td className={`px-2 py-2 text-center font-bold bg-blue-100/50 dark:bg-slate-800/30 border-l-2 border-blue-200 dark:border-slate-700 ${getVariationClass(
+                                            <td className={`px-2 py-2 text-center font-bold bg-blue-100 dark:bg-blue-950 border-l-2 border-blue-200 dark:border-slate-700 ${getVariationClass(
                                                 calculatedTotals.expense[calculatedTotals.expense.length - 1] || 0,
                                                 calculatedTotals.expense[calculatedTotals.expense.length - 2] || 0,
                                                 true
@@ -1922,10 +2027,10 @@ export default function FlowGrid() {
                                                 )}
                                             </td>
                                         )}
-                                        <td className="px-4 py-2 text-right font-bold bg-rose-100">
+                                        <td className="px-4 py-2 text-right font-bold bg-rose-100 dark:bg-rose-950">
                                             {formatMoney(calculatedTotals.expenseGrandTotal)}
                                         </td>
-                                        {showPercentages && <td className="bg-rose-100"></td>}
+                                        {showPercentages && <td className="bg-rose-100 dark:bg-rose-950"></td>}
                                     </tr>
                                 </>
                             )}

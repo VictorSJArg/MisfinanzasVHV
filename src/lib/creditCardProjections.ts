@@ -9,6 +9,26 @@ export interface CreditCardProjection {
   category?: string;
   status?: string;
   referenceId?: string;
+  cardName?: string;
+}
+
+interface VirtualCardItem {
+  id: string;
+  statementId: string;
+  description: string;
+  amount: number;
+  amountUSD: number;
+  installmentCurrent: number | null;
+  installmentTotal: number | null;
+  itemType: string;
+  isRecurring: boolean;
+  category: string;
+  includeInProjection: boolean;
+  projectedAmount: null;
+  observations: null;
+  dueDate: string;
+  isVirtual: true;
+  date: string;
 }
 
 export async function getCreditCardProjectionsForRange(userId: string, start: Date, end: Date): Promise<CreditCardProjection[]> {
@@ -43,11 +63,11 @@ export async function getCreditCardProjectionsForRange(userId: string, start: Da
 
     // Inject virtual items (new monthly card transactions from Transaction table)
     const virtualItems = await getVirtualItemsForCard(userId, card);
-    latestStatement.items = [...latestStatement.items, ...virtualItems];
 
     for (let i = 0; i < card.statements.length; i++) {
       const currentStmt = card.statements[i];
       const prevStmt = i + 1 < card.statements.length ? card.statements[i + 1] : null;
+      const currentStmtItems = currentStmt.id === latestStatement.id ? [...currentStmt.items, ...virtualItems] : currentStmt.items;
 
       if (!prevStmt) continue;
 
@@ -57,7 +77,7 @@ export async function getCreditCardProjectionsForRange(userId: string, start: Da
         }
 
         const cleanPrev = prevItem.description.toLowerCase().replace(/cuota \d+\/\d+/i, '').trim();
-        const existsInCurrent = currentStmt.items.some((currItem) => {
+        const existsInCurrent = currentStmtItems.some((currItem) => {
           const cleanCurr = currItem.description.toLowerCase().replace(/cuota \d+\/\d+/i, '').trim();
           const descMatch = cleanCurr.includes(cleanPrev) || cleanPrev.includes(cleanCurr);
 
@@ -84,7 +104,8 @@ export async function getCreditCardProjectionsForRange(userId: string, start: Da
             type: 'RECURRING',
             category: prevItem.category || 'OTROS',
             status: 'PENDING',
-            referenceId: `ghost-${prevItem.id}-${currentStmt.id}`
+            referenceId: `ghost-${prevItem.id}-${currentStmt.id}`,
+            cardName: card.name
           });
         }
 
@@ -104,7 +125,8 @@ export async function getCreditCardProjectionsForRange(userId: string, start: Da
               type: 'RECURRING',
               category: prevItem.category || 'OTROS',
               status: 'PENDING',
-              referenceId: `ghost-${prevItem.id}-future`
+              referenceId: `ghost-${prevItem.id}-future`,
+              cardName: card.name
             });
           }
         }
@@ -113,11 +135,12 @@ export async function getCreditCardProjectionsForRange(userId: string, start: Da
 
     for (const statement of card.statements) {
       const isLatest = statement.id === latestStatement.id;
+      const statementItems = isLatest ? [...statement.items, ...virtualItems] : statement.items;
 
       if (statement.dueDate < start && !isLatest) continue;
       if (statement.dueDate > end && !isLatest) continue;
 
-      for (const item of statement.items) {
+      for (const item of statementItems) {
         if (item.includeInProjection === false) continue;
 
         const baseAmount = item.projectedAmount !== null && item.projectedAmount !== undefined
@@ -125,9 +148,10 @@ export async function getCreditCardProjectionsForRange(userId: string, start: Da
           : Number(item.amount);
 
         // Handle virtual items (new monthly card transactions)
-        const isVirtual = item.id.startsWith('virtual-') || (item as any).isVirtual;
+        const virtualItem = item as typeof item & { dueDate?: string; isVirtual?: boolean };
+        const isVirtual = item.id.startsWith('virtual-') || virtualItem.isVirtual === true;
         if (isVirtual) {
-          const itemDueDate = (item as any).dueDate ? new Date((item as any).dueDate) : addMonths(statement.dueDate, 1);
+          const itemDueDate = virtualItem.dueDate ? new Date(virtualItem.dueDate) : addMonths(statement.dueDate, 1);
           if (itemDueDate >= start && itemDueDate <= end) {
             projections.push({
               date: itemDueDate.toISOString(),
@@ -136,7 +160,8 @@ export async function getCreditCardProjectionsForRange(userId: string, start: Da
               type: 'PURCHASE',
               category: item.category || 'OTROS',
               status: 'PENDING',
-              referenceId: item.id
+              referenceId: item.id,
+              cardName: card.name
             });
           }
           continue; // Skip the normal statement due date projection
@@ -155,7 +180,8 @@ export async function getCreditCardProjectionsForRange(userId: string, start: Da
             type: 'PURCHASE',
             category: item.category || 'OTROS',
             status: statusMap.get(`${item.id}-${dateStr}`) || 'PENDING',
-            referenceId: item.id
+            referenceId: item.id,
+            cardName: card.name
           });
         }
 
@@ -178,7 +204,8 @@ export async function getCreditCardProjectionsForRange(userId: string, start: Da
               type: 'RECURRING',
               category: item.category || 'OTROS',
               status: statusMap.get(`${item.id}-${dateStr}`) || 'PENDING',
-              referenceId: item.id
+              referenceId: item.id,
+              cardName: card.name
             });
           }
         } else if (item.installmentCurrent && item.installmentTotal) {
@@ -200,7 +227,8 @@ export async function getCreditCardProjectionsForRange(userId: string, start: Da
               type: 'INSTALLMENT',
               category: item.category || 'OTROS',
               status: statusMap.get(`${item.id}-${dateStr}`) || 'PENDING',
-              referenceId: item.id
+              referenceId: item.id,
+              cardName: card.name
             });
           }
         }
@@ -226,9 +254,7 @@ export function getDueDateForTransaction(txDate: Date, latestStatement: { closin
     targetClosing.setMonth(targetClosing.getMonth() + monthsToAdd);
   }
 
-  const targetDue = new Date(due);
-  targetDue.setMonth(targetDue.getMonth() + monthsToAdd);
-  return targetDue;
+  return endOfMonth(addMonths(due, monthsToAdd));
 }
 
 export async function getAccountIdForCard(userId: string, card: { name: string; bank: string }): Promise<string | null> {
@@ -265,7 +291,10 @@ export async function getAccountIdForCard(userId: string, card: { name: string; 
   }
 }
 
-export async function getVirtualItemsForCard(userId: string, card: { id: string; name: string; bank: string; statements: any[] }): Promise<any[]> {
+export async function getVirtualItemsForCard(
+  userId: string,
+  card: { id: string; name: string; bank: string; statements: Array<{ id: string; closingDate: Date; dueDate: Date }> }
+): Promise<VirtualCardItem[]> {
   if (card.statements.length === 0) return [];
   const latestStatement = card.statements[0];
 
@@ -283,7 +312,7 @@ export async function getVirtualItemsForCard(userId: string, card: { id: string;
     orderBy: { date: 'asc' }
   });
 
-  return transactions.map(tx => {
+  return transactions.map((tx): VirtualCardItem => {
     const dueDate = getDueDateForTransaction(tx.date, latestStatement);
     return {
       id: `virtual-item-${tx.id}`,

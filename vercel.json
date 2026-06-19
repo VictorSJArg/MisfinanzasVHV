@@ -3,6 +3,14 @@
     {
       "path": "/api/keep-alive",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/alerts/dispatch",
+      "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/personal-assistant/dispatch",
+      "schedule": "0 10 * * *"
     }
   ]
 }

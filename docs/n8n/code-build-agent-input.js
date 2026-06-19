@@ -25,7 +25,11 @@ return [{
       today,
       phone: item.phone,
       categories: data.categories || [],
-      accounts: data.accounts || []
+      accounts: data.accounts || [],
+      personalContacts: data.personalContacts || [],
+      chatHistory: data.chatHistory || [],
+      pendingAssistantSession: data.pendingAssistantSession || null,
+      pendingConfirmation: item.pendingConfirmation || null
     },
     media: {
       transcript: item.transcript || '',
