@@ -119,10 +119,17 @@ async function main() {
     const idMap = new Map();
     const pending = [...categoriesResult.rows];
     while (pending.length) {
-      const index = pending.findIndex((category) => !category.parentId || idMap.has(category.parentId));
+      const index = pending.findIndex(
+        (category) => !category.parentId || category.parentId === category.id || idMap.has(category.parentId)
+      );
       if (index === -1) fail('La jerarquía de categorías origen contiene una referencia circular o inválida.');
       const [category] = pending.splice(index, 1);
-      const parentId = category.parentId ? idMap.get(category.parentId) : null;
+      const parentId = category.parentId && category.parentId !== category.id
+        ? idMap.get(category.parentId)
+        : null;
+      if (category.parentId === category.id) {
+        console.warn(`Aviso: ${category.name} se copiará como categoría raíz porque se referenciaba a sí misma.`);
+      }
       const inserted = await target.query(
         `INSERT INTO "Category" (name, type, icon, color, "parentId", "sortOrder", "userId")
          VALUES ($1, $2, $3, $4, $5, $6, $7)
